@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-papel text-tinta font-corpo antialiased;
+    /* pauta de livro-caixa */
+    background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(217, 205, 182, 0.45) 31px, rgba(217, 205, 182, 0.45) 32px);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  h1, h2, h3 { @apply font-titulo; }
+  input, select, textarea { @apply text-base; } /* evita zoom no iPhone */
+}
+
+@layer components {
+  .folha { @apply bg-papel-claro border border-linha rounded-xl shadow-folha; }
+  .num { @apply font-num tabular-nums tracking-tight; }
+  .rotulo { @apply text-[11px] uppercase tracking-[0.12em] text-tinta-fraca font-semibold; }
+  .campo {
+    @apply w-full rounded-lg border border-linha bg-white/70 px-3 py-2 text-tinta outline-none transition
+      focus:border-couro focus:ring-2 focus:ring-couro/20;
+  }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 font-medium transition active:scale-[.98] disabled:opacity-50; }
+  .btn-primario { @apply btn bg-couro text-papel-claro hover:bg-couro-escuro; }
+  .btn-secundario { @apply btn border border-linha bg-papel-claro text-tinta hover:bg-papel-escuro; }
+  .btn-perigo { @apply btn text-vermelho hover:bg-vermelho-claro; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium; }
+}
+
+@keyframes subir { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+.animar-subir { animation: subir .18s ease-out; }
