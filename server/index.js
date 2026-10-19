@@ -28,7 +28,12 @@ async function conectar() {
   let uri = process.env.MONGODB_URI;
   if (!uri) {
     // Desenvolvimento: banco em memória (os dados somem ao reiniciar)
-    const { MongoMemoryServer } = await import('mongodb-memory-server');
+    let MongoMemoryServer;
+    try {
+      ({ MongoMemoryServer } = await import('mongodb-memory-server'));
+    } catch {
+      throw new Error('A variável MONGODB_URI não está definida. No Railway: serviço → Variables → New Variable → MONGODB_URI.');
+    }
     const mem = await MongoMemoryServer.create();
     uri = mem.getUri();
     console.warn('⚠️  MONGODB_URI não definida — usando banco em memória (dados temporários).');
