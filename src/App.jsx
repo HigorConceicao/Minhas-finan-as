@@ -8,6 +8,8 @@ import Orcamento from './components/Orcamento.jsx';
 import Recorrentes from './components/Recorrentes.jsx';
 import Rendimento from './components/Rendimento.jsx';
 
+const DEMO = import.meta.env.MODE === 'demo';
+
 const ABAS = [
   { id: 'visao', nome: 'Visão geral', curto: 'Início', icone: '⌂' },
   { id: 'lancamentos', nome: 'Lançamentos', curto: 'Lançam.', icone: '☰' },
@@ -96,7 +98,7 @@ function Painel() {
       <header className="sticky top-0 z-30 border-b border-linha bg-papel/95 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="flex items-center justify-between px-4 py-3">
           <h1 className="flex items-center gap-2 text-xl font-semibold"><span aria-hidden>📒</span> Minhas Finanças</h1>
-          <a href="/api/exportar" className="text-xs text-tinta-fraca hover:text-tinta" title="Baixar backup em JSON"
+          {DEMO ? <span className="chip bg-ambar-claro text-ambar">Demonstração</span> : <a href="/api/exportar" className="text-xs text-tinta-fraca hover:text-tinta" title="Baixar backup em JSON"
             onClick={async (e) => {
               e.preventDefault();
               try {
@@ -105,7 +107,7 @@ function Painel() {
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob); a.download = `minhas-financas-${new Date().toISOString().slice(0, 10)}.json`; a.click();
               } catch { avisar('Não foi possível exportar', 'erro'); }
-            }}>⤓ Backup</a>
+            }}>⤓ Backup</a>}
         </div>
         <nav className="hidden gap-1 px-3 pb-2 sm:flex">
           {ABAS.map((a) => (

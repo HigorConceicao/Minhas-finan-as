@@ -396,7 +396,9 @@ function ModalRendimento({ aberto, conta, metricas, movs, aoFechar, aoSalvar }) 
   const [mes, setMes] = useState(mesAtual());
   const [valor, setValor] = useState('');
   const [usarValor, setUsarValor] = useState(manual);
-  useEffect(() => { if (aberto) { setMes(mesAtual()); setValor(''); setUsarValor(manual); } }, [aberto, manual]);
+  const [duplicado, setDuplicado] = useState(false);
+  useEffect(() => { if (aberto) { setMes(mesAtual()); setValor(''); setUsarValor(manual); setDuplicado(false); } }, [aberto, manual]);
+  useEffect(() => setDuplicado(false), [mes]);
 
   const lancados = useMemo(() => new Set(movs.filter((m) => m.tipo === 'rendimento').map((m) => m.data.slice(0, 7))), [movs]);
   const inicio = String(conta.dataInicio).slice(0, 7);
@@ -421,14 +423,17 @@ function ModalRendimento({ aberto, conta, metricas, movs, aoFechar, aoSalvar }) 
       const res = await post(`/contas/${conta._id}/aplicar-rendimento`, corpo);
       aoSalvar(res.movimento.valor);
     } catch (e) {
-      if (e.status === 409 && window.confirm('Já existe rendimento lançado neste mês. Lançar outro mesmo assim?')) return salvar(true);
+      if (e.status === 409) return setDuplicado(true);
       avisar(e.message, 'erro');
     }
   };
 
   return (
     <Modal titulo="Lançar rendimento" aberto={aberto} aoFechar={aoFechar}
-      rodape={<><button className="btn-secundario" onClick={aoFechar}>Cancelar</button><button className="btn-primario" onClick={() => salvar()}>Lançar</button></>}>
+      rodape={<><button className="btn-secundario" onClick={aoFechar}>Cancelar</button>
+        {duplicado
+          ? <button className="btn bg-ambar text-white" onClick={() => salvar(true)}>Lançar mesmo assim</button>
+          : <button className="btn-primario" onClick={() => salvar()}>Lançar</button>}</>}>
       <div className="space-y-4">
         <Campo rotulo="Mês de referência" dica={pendentes.length > 1 ? `${pendentes.length} meses sem rendimento lançado` : undefined}>
           <select className="campo" value={mes} onChange={(e) => setMes(e.target.value)}>
@@ -451,6 +456,9 @@ function ModalRendimento({ aberto, conta, metricas, movs, aoFechar, aoSalvar }) 
             <p className="num mt-1 text-xl font-medium text-verde">≈ {dinheiro(baseEst * (r / 100), conta.moeda)}</p>
             <p className="mt-1 text-xs text-tinta-suave">O valor exato é calculado com os movimentos registrados até o último dia do mês.</p>
           </div>
+        )}
+        {duplicado && (
+          <p className="rounded-lg bg-ambar-claro p-3 text-sm">Já existe rendimento lançado em {mesLongo(mes).toLowerCase()}. Para corrigir, apague o anterior na lista de movimentos, ou lance outro mesmo assim.</p>
         )}
       </div>
     </Modal>
