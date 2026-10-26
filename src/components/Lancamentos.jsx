@@ -116,17 +116,23 @@ export function ItemLancamento({ l, cat, aoAbrir, contaAtual }) {
   const moeda = naContaDaCompra ? contas.find((c) => c._id === l.conta)?.moeda || l.moeda
     : transf && contaAtual === l.contaDestino && l.valorDestino != null ? contas.find((c) => c._id === l.contaDestino)?.moeda || l.moeda : l.moeda;
   const detalhes = [];
-  if (transf) detalhes.push(`${nomeConta(l.conta) || '?'} → ${nomeConta(l.contaDestino) || '?'}`);
+  if (l.separado) detalhes.push(t(`lanc.sep.${l.separado}${l.contaDestino ? 'Volta' : ''}`));
+  else if (transf) detalhes.push(`${nomeConta(l.conta) || '?'} → ${nomeConta(l.contaDestino) || '?'}`);
   else {
     detalhes.push(cat?.nome || t('comum.semCategoria'));
-    if (l.conta && !contaAtual && nomeConta(l.conta)) detalhes.push(nomeConta(l.conta));
+    if (l.reservaViagem) detalhes.push(t('lanc.daReserva'));
+    else if (l.conta && !contaAtual && nomeConta(l.conta)) detalhes.push(nomeConta(l.conta));
   }
   if (l.parcela) detalhes.push(t('lanc.parcela', { n: l.parcela.numero, t: l.parcela.total }));
   if (l.ajuste) detalhes.push(t('lanc.ajusteSaldo'));
   if (naContaDaCompra) detalhes.push(dinheiro(l.valor, l.moeda));
+  // o que foi separado para metas e viagens aparece no extrato, mas é editado na meta ou na viagem
+  const Tag = l.separado ? 'div' : 'button';
   return (
-    <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-sutil/60" onClick={aoAbrir}>
-      {transf
+    <Tag className={`flex w-full items-center gap-3 px-4 py-3.5 text-left ${l.separado ? '' : 'hover:bg-sutil/60'}`} onClick={l.separado ? undefined : aoAbrir}>
+      {l.separado
+        ? <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-marca-suave text-marca"><Icone nome={l.separado === 'meta' ? 'meta' : 'aviao'} className="h-4 w-4" /></span>
+        : transf
         ? <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-sutil text-texto-2"><Icone nome="recorrente" className="h-4 w-4" /></span>
         : <IconeCategoria cor={cat?.cor} icone={cat?.icone} />}
       <span className="min-w-0 flex-1">
@@ -139,11 +145,12 @@ export function ItemLancamento({ l, cat, aoAbrir, contaAtual }) {
       <span className={`num shrink-0 text-sm font-bold ${transf && !contaAtual ? 'text-texto-2' : entrada ? 'text-pos' : ''}`}>
         {transf && !contaAtual ? '' : entrada ? '+' : '−'}{dinheiro(valor, moeda)}
       </span>
-    </button>
+    </Tag>
   );
 }
 
 const MOEDAS = ['EUR', 'BRL', 'USD'];
+const RESERVA = '__reserva'; // "conta" = dinheiro separado da viagem
 
 /**
  * Formulário de lançamento. `item` sem _id traz valores iniciais (ex.: { tipo: 'transferencia', conta }).
@@ -159,7 +166,7 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
     const ultimaMoeda = (() => { try { return localStorage.getItem('mf2-moeda'); } catch { return null; } })();
     if (item?._id) {
       setF({ ...item, valor: paraCampo(item.valor), valorDestino: paraCampo(item.valorDestino), valorConta: paraCampo(item.valorConta), data: paraInput(item.data), categoria: item.categoria || '',
-        conta: item.conta || '', contaDestino: item.contaDestino || '', viagem: item.viagem || '', parcelas: '1' });
+        conta: item.reservaViagem ? RESERVA : item.conta || '', contaDestino: item.contaDestino || '', viagem: item.viagem || '', parcelas: '1' });
       return;
     }
     const conta = item?.conta ?? (contasAtivas.some((c) => c._id === ultimaConta.get()) ? ultimaConta.get() : '');
@@ -172,11 +179,14 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
   const transf = f.tipo === 'transferencia';
   const cats = categorias.filter((c) => c.tipo === f.tipo);
   const contaOrig = contas.find((c) => c._id === f.conta);
+  const viagemSel = viagens.find((v) => v._id === f.viagem);
+  const reservaDisponivel = !transf && viagemSel?.temReserva;
+  const usaReserva = f.conta === RESERVA && reservaDisponivel;
   const contaDest = contas.find((c) => c._id === f.contaDestino);
   const moedasDiferentes = transf && contaOrig && contaDest && contaOrig.moeda !== contaDest.moeda;
   const ehCartao = contaOrig?.tipo === 'cartao' && f.tipo === 'despesa';
   // ao escolher a conta, a moeda acompanha
-  const escolherConta = (id) => setF((x) => ({ ...x, conta: id, valorConta: '', moeda: contas.find((c) => c._id === id)?.moeda || x.moeda }));
+  const escolherConta = (id) => setF((x) => ({ ...x, conta: id, valorConta: '', moeda: (id === RESERVA ? viagens.find((v) => v._id === x.viagem)?.moeda : contas.find((c) => c._id === id)?.moeda) || x.moeda }));
   const outraMoeda = !transf && contaOrig && f.moeda && contaOrig.moeda !== f.moeda;
   const opcoesConta = (excluir) => [...contasAtivas, ...(f.conta && !contasAtivas.some((c) => c._id === f.conta) ? contas.filter((c) => c._id === f.conta) : [])]
     .filter((c) => c._id !== excluir);
@@ -191,14 +201,14 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
     if (transf && (!f.conta || !f.contaDestino || f.conta === f.contaDestino)) return avisar(t('erro.transferencia_contas'), 'erro');
     const corpo = {
       tipo: f.tipo, descricao, valor, moeda: transf ? contaOrig?.moeda || f.moeda : f.moeda, data: f.data, nota: f.nota,
-      categoria: transf ? null : f.categoria || null, conta: f.conta || null, contaDestino: transf ? f.contaDestino : null,
+      categoria: transf ? null : f.categoria || null, conta: f.conta === RESERVA ? null : f.conta || null, reservaViagem: !transf && usaReserva, contaDestino: transf ? f.contaDestino : null,
       valorDestino: moedasDiferentes ? lerNumero(f.valorDestino) || null : null, valorConta: outraMoeda ? lerNumero(f.valorConta) || null : null, viagem: transf ? null : f.viagem || null,
       ...(novo && ehCartao && Number(f.parcelas) > 1 ? { parcelas: Number(f.parcelas) } : {}),
     };
     try {
       novo ? await post('/lancamentos', corpo) : await put(`/lancamentos/${item._id}`, corpo);
       try { localStorage.setItem('mf2-moeda', corpo.moeda); } catch {}
-      if (f.conta && !transf) ultimaConta.set(f.conta);
+      if (f.conta && f.conta !== RESERVA && !transf) ultimaConta.set(f.conta);
       aoSalvar();
     } catch (err) { avisar(err.message, 'erro'); }
   };
@@ -259,13 +269,15 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
                 {contas.length > 0 && (
                   <Campo rotulo={t('lanc.conta')} className={opcoesViagem.length ? '' : 'col-span-2'}>
                     <select id="lanc-conta" className="campo" value={f.conta} onChange={(e) => escolherConta(e.target.value)}>
-                      <option value="">{t('lanc.semConta')}</option>{opcoesConta(null).map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
+                      <option value="">{t('lanc.semConta')}</option>
+                      {reservaDisponivel && <option value={RESERVA}>{t('lanc.dinheiroSeparado', { v: dinheiro(viagemSel.saldoReserva, viagemSel.moeda) })}</option>}
+                      {opcoesConta(null).map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
                     </select>
                   </Campo>
                 )}
                 {opcoesViagem.length > 0 && (
                   <Campo rotulo={t('lanc.viagem')} className={contas.length ? '' : 'col-span-2'}>
-                    <select id="lanc-viagem" className="campo" value={f.viagem} onChange={set('viagem')}>
+                    <select id="lanc-viagem" className="campo" value={f.viagem} onChange={(e) => setF((x) => ({ ...x, viagem: e.target.value, ...(x.conta === RESERVA ? { conta: '' } : {}) }))}>
                       <option value="">{t('lanc.semViagem')}</option>{opcoesViagem.map((v) => <option key={v._id} value={v._id}>{v.icone} {v.nome}</option>)}
                     </select>
                   </Campo>

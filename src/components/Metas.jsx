@@ -4,6 +4,8 @@ import { dataCompleta, dinheiro, hojeISO, lerNumero, mesAtual, mesCurto, mesNaFr
 import { useT } from '../i18n.js';
 import { BotaoConfirmar, Campo, Carregando, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
 import Icone from './Icones.jsx';
+import SeletorOrigem, { lembrarOrigem, origemInicial } from './Origem.jsx';
+import { useDados } from '../dados.jsx';
 
 const ESTADO = {
   'no-ritmo': 'bg-pos-suave text-pos', concluida: 'bg-pos-suave text-pos', atrasada: 'bg-aviso-suave text-aviso',
@@ -165,6 +167,8 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
   const t = useT();
   const avisar = useAviso();
   const [contribs, setContribs] = useState(null);
+  const { contas, recarregar } = useDados();
+  const nomeConta = (cid) => contas.find((c) => c._id === cid)?.nome;
   const id = meta?._id;
   const carregar = useCallback(async () => { if (id) setContribs(await get(`/metas/${id}/contribuicoes`)); }, [id]);
   useEffect(() => { setContribs(null); carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar, meta?.guardado]);
@@ -214,11 +218,11 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
                 <li key={c._id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{c.nota || (c.valor < 0 ? t('metas.retirada') : t('metas.deposito'))}{c.pessoa && <span className="font-normal text-texto-3"> · {c.pessoa}</span>}</p>
-                    <p className="text-xs text-texto-3">{dataCompleta(c.data)}</p>
+                    <p className="truncate text-xs text-texto-3">{dataCompleta(c.data)}{c.conta && nomeConta(c.conta) && <> · {c.valor < 0 ? '→' : '←'} {nomeConta(c.conta)}</>}</p>
                   </div>
                   <span className={`num text-sm font-bold ${c.valor < 0 ? 'text-neg' : 'text-pos'}`}>{c.valor < 0 ? '−' : '+'}{dinheiro(Math.abs(c.valor), meta.moeda)}</span>
                   <BotaoConfirmar className="rounded-full p-2 text-xs font-semibold text-texto-3 hover:bg-neg-suave hover:text-neg" rotulo={t('metas.apagarDep')} texto={t('metas.apagarDep')}
-                    aoConfirmar={async () => { await del(`/contribuicoes/${c._id}`); await Promise.all([carregar(), aoMudar()]); }}>
+                    aoConfirmar={async () => { await del(`/contribuicoes/${c._id}`); await Promise.all([carregar(), aoMudar(), recarregar()]); }}>
                     <Icone nome="lixo" className="h-4 w-4" />
                   </BotaoConfirmar>
                 </li>
@@ -311,12 +315,13 @@ function FormMeta({ aberto, meta, aoFechar, aoSalvar, aoApagar }) {
 function FormDeposito({ aberto, meta, tipoInicial = 'deposito', aoFechar, aoSalvar }) {
   const t = useT();
   const avisar = useAviso();
+  const { contas, recarregar } = useDados();
   const [f, setF] = useState({});
   useEffect(() => {
     if (!aberto || !meta) return;
     let ultima = '';
     try { ultima = localStorage.getItem(`mf2-pessoa-${meta._id}`) || ''; } catch {}
-    setF({ tipo: tipoInicial, valor: '', data: hojeISO(), pessoa: meta.pessoas?.includes(ultima) ? ultima : meta.pessoas?.[0] || '', nota: '' });
+    setF({ tipo: tipoInicial, valor: '', data: hojeISO(), pessoa: meta.pessoas?.includes(ultima) ? ultima : meta.pessoas?.[0] || '', nota: '', conta: origemInicial(contas, true), valorConta: '' });
   }, [aberto, meta, tipoInicial]);
   if (!meta) return null;
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
@@ -326,7 +331,10 @@ function FormDeposito({ aberto, meta, tipoInicial = 'deposito', aoFechar, aoSalv
     const v = lerNumero(f.valor);
     if (!(v > 0)) return avisar(t('lanc.informeValor'), 'erro');
     try {
-      await post(`/metas/${meta._id}/contribuicoes`, { valor: f.tipo === 'retirada' ? -v : v, data: f.data, pessoa: f.pessoa, nota: f.nota });
+      const vc = lerNumero(f.valorConta);
+      await post(`/metas/${meta._id}/contribuicoes`, { valor: f.tipo === 'retirada' ? -v : v, data: f.data, pessoa: f.pessoa, nota: f.nota, conta: f.conta || null, valorConta: f.conta && vc > 0 ? (f.tipo === 'retirada' ? -vc : vc) : null });
+      lembrarOrigem(f.conta);
+      recarregar();
       try { if (f.pessoa) localStorage.setItem(`mf2-pessoa-${meta._id}`, f.pessoa); } catch {}
       aoSalvar();
     } catch (err) { avisar(err.message, 'erro'); }
@@ -347,6 +355,9 @@ function FormDeposito({ aberto, meta, tipoInicial = 'deposito', aoFechar, aoSalv
             <Segmentado valor={f.pessoa} aoMudar={(k) => setF((x) => ({ ...x, pessoa: k }))} opcoes={meta.pessoas.map((p) => [p, p])} />
           </Campo>
         )}
+        <SeletorOrigem conta={f.conta} aoMudar={(id) => setF((x) => ({ ...x, conta: id }))} valor={f.valor} moeda={meta.moeda}
+          valorConta={f.valorConta} aoMudarValorConta={(v) => setF((x) => ({ ...x, valorConta: v }))} volta={f.tipo === 'retirada'}
+          dica={f.tipo === 'retirada' ? t('orig.dicaMetaVolta') : t('orig.dicaMeta')} />
         <Campo rotulo={t('comum.nota')}><input id="dep-nota" className="campo" value={f.nota || ''} onChange={set('nota')} /></Campo>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>

@@ -2,10 +2,10 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import {
-  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem,
+  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem,
 } from './models.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados,
 } from './contas.js';
 import { chavePublica, inscrever, cancelarInscricao, enviarTeste } from './lembretes.js';
 import {
@@ -113,25 +113,28 @@ api.delete('/categorias/:id', wrap(async (req, res) => {
 
 // ---------- lançamentos ----------
 const idOuNulo = (v) => (v === undefined ? undefined : v && validarId(v) ? v : null);
-const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota, conta, contaDestino, valorDestino, valorConta, fatura, ajuste, viagem }) => {
+const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota, conta, contaDestino, valorDestino, valorConta, fatura, ajuste, viagem, reservaViagem }) => {
   const d = Object.fromEntries(Object.entries({
     tipo, descricao, valor: valor === undefined ? undefined : round2(valor), moeda, data, categoria: idOuNulo(categoria), nota,
     conta: idOuNulo(conta), contaDestino: idOuNulo(contaDestino), viagem: idOuNulo(viagem),
     valorDestino: valorDestino === undefined ? undefined : valorDestino === null || valorDestino === '' ? null : round2(valorDestino),
     valorConta: valorConta === undefined ? undefined : valorConta === null || valorConta === '' ? null : round2(valorConta),
-    fatura: fatura === undefined ? undefined : fatura || null, ajuste,
+    fatura: fatura === undefined ? undefined : fatura || null, ajuste, reservaViagem: reservaViagem === undefined ? undefined : !!reservaViagem,
   }).filter(([, v]) => v !== undefined));
-  if (d.tipo === 'transferencia') { d.categoria = null; d.viagem = null; d.valorConta = null; }
+  if (d.tipo === 'transferencia') { d.categoria = null; d.viagem = null; d.valorConta = null; d.reservaViagem = false; }
   else if (d.tipo) { d.contaDestino = null; d.valorDestino = null; d.fatura = null; }
+  if (d.reservaViagem) d.conta = null; // pago com o dinheiro separado da viagem
   return d;
 };
 /** Compra em moeda diferente da conta: sem valor informado, converte pelo câmbio do dia da compra */
 async function definirValorConta(docs) {
   const cache = new Map();
   for (const d of docs) {
-    if (d.tipo === 'transferencia' || !d.conta || !d.moeda) continue;
-    const k = String(d.conta);
-    if (!cache.has(k)) cache.set(k, (await Conta.findById(k, 'moeda').lean())?.moeda || null);
+    if (d.tipo === 'transferencia' || !d.moeda) continue;
+    if (!d.conta && !(d.reservaViagem && d.viagem)) { d.valorConta = null; continue; }
+    // gasto com dinheiro separado: o "valor na conta" é na moeda da viagem
+    const k = d.reservaViagem ? `v${d.viagem}` : String(d.conta);
+    if (!cache.has(k)) cache.set(k, d.reservaViagem ? (await Viagem.findById(String(d.viagem), 'moeda').lean())?.moeda || null : (await Conta.findById(k, 'moeda').lean())?.moeda || null);
     const mc = cache.get(k);
     if (!mc || mc === d.moeda) { d.valorConta = null; continue; }
     if (d.valorConta != null) continue;
@@ -152,7 +155,16 @@ api.get('/lancamentos', wrap(async (req, res) => {
   if (req.query.categoria && validarId(req.query.categoria)) filtro.categoria = req.query.categoria;
   if (req.query.conta && validarId(req.query.conta)) filtro.$or = [{ conta: req.query.conta }, { contaDestino: req.query.conta }];
   if (req.query.viagem && validarId(req.query.viagem)) filtro.viagem = req.query.viagem;
-  res.json(await Lancamento.find(filtro).sort({ data: -1, createdAt: -1 }).limit(2000));
+  const lista = await Lancamento.find(filtro).sort({ data: -1, createdAt: -1 }).limit(2000).lean();
+  if (filtro.$or) {
+    // na conta, também o que foi separado para metas e viagens
+    const { lancamentos } = await separados();
+    const id = String(req.query.conta);
+    const mes = req.query.mes;
+    lista.push(...lancamentos.filter((l) => (String(l.conta) === id || String(l.contaDestino) === id) && (!mes || mesDe(l.data) === mes)));
+    lista.sort((a, b) => new Date(b.data) - new Date(a.data));
+  }
+  res.json(lista);
 }));
 api.post('/lancamentos', wrap(async (req, res) => {
   const dados = camposLancamento(req.body);
@@ -171,7 +183,7 @@ api.put('/lancamentos/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const dados = camposLancamento(req.body);
   if (!validarTransferencia(dados)) return erro(res, 400, 'Escolha as duas contas da transferência', 'transferencia_contas');
-  if (dados.conta !== undefined || dados.valor !== undefined || dados.moeda !== undefined) {
+  if (dados.conta !== undefined || dados.valor !== undefined || dados.moeda !== undefined || dados.reservaViagem !== undefined || dados.viagem !== undefined) {
     const atual = await Lancamento.findById(req.params.id).lean();
     if (atual) { const junto = { ...atual, ...dados }; await definirValorConta([junto]); dados.valorConta = junto.valorConta ?? null; }
   }
@@ -479,8 +491,26 @@ api.delete('/metas/:id', wrap(async (req, res) => {
   res.status(204).end();
 }));
 
-const camposContrib = ({ valor, data, pessoa, nota }) =>
-  Object.fromEntries(Object.entries({ valor: valor === undefined ? undefined : round2(valor), data, pessoa, nota }).filter(([, v]) => v !== undefined));
+const camposContrib = ({ valor, data, pessoa, nota, conta, valorConta }) =>
+  Object.fromEntries(Object.entries({
+    valor: valor === undefined ? undefined : round2(valor), data, pessoa, nota, conta: idOuNulo(conta),
+    valorConta: valorConta === undefined ? undefined : valorConta === null || valorConta === '' ? null : round2(valorConta),
+  }).filter(([, v]) => v !== undefined));
+
+/** Conta de onde sai (ou para onde volta) dinheiro separado: só contas com dinheiro de verdade */
+const ORIGENS = ['corrente', 'dinheiro', 'investimento'];
+async function contaDeOrigem(id) {
+  if (!id) return null;
+  const c = await Conta.findById(id).lean();
+  if (!c || !ORIGENS.includes(c.tipo)) throw Object.assign(new Error('Escolha uma conta corrente, dinheiro ou investimento'), { status: 400, codigo: 'conta_origem_invalida' });
+  return c;
+}
+/** Valor na moeda da conta (sinal igual ao valor), convertido pelo câmbio do dia se não foi informado */
+async function valorNaMoedaDaConta(conta, valor, moeda, valorInformado, data) {
+  if (!conta || conta.moeda === moeda) return null;
+  if (valorInformado != null && valorInformado !== '') return Math.sign(valor) * Math.abs(round2(valorInformado));
+  return round2(converter(valor, moeda, conta.moeda, await taxasNaData(new Date(data || Date.now()).toISOString().slice(0, 10))));
+}
 
 api.get('/metas/:id/contribuicoes', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
@@ -496,12 +526,21 @@ api.post('/metas/:id/contribuicoes', wrap(async (req, res) => {
     const guardado = (await ContribuicaoMeta.find({ meta: meta._id }).lean()).reduce((s, c) => s + c.valor, 0);
     if (-dados.valor > guardado + 0.001) return erro(res, 400, 'Retirada maior que o guardado', 'retirada_maior_guardado', { saldo: round2(guardado), moeda: meta.moeda });
   }
+  const conta = await contaDeOrigem(dados.conta);
+  dados.valorConta = await valorNaMoedaDaConta(conta, dados.valor, meta.moeda, dados.valorConta, dados.data);
   await ContribuicaoMeta.create({ ...dados, meta: meta._id });
   res.status(201).json(await metaComMetricas(meta));
 }));
 api.put('/contribuicoes/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  const c = await ContribuicaoMeta.findByIdAndUpdate(req.params.id, camposContrib(req.body), { new: true, runValidators: true });
+  const antes = await ContribuicaoMeta.findById(req.params.id).lean();
+  if (!antes) return erro(res, 404, 'Não encontrado');
+  const dados = camposContrib(req.body);
+  const junto = { ...antes, ...dados };
+  const conta = await contaDeOrigem(junto.conta);
+  const meta = await Meta.findById(antes.meta).lean();
+  dados.valorConta = await valorNaMoedaDaConta(conta, junto.valor, meta?.moeda, dados.valorConta, junto.data);
+  const c = await ContribuicaoMeta.findByIdAndUpdate(req.params.id, dados, { new: true, runValidators: true });
   c ? res.json(c) : erro(res, 404, 'Não encontrado');
 }));
 api.delete('/contribuicoes/:id', wrap(async (req, res) => {
@@ -573,11 +612,21 @@ api.post('/importar', wrap(async (req, res) => {
 }));
 
 // ---------- contas, cartões e patrimônio ----------
+/** Depósitos em metas e dinheiro separado para viagens, como movimentos das contas */
+async function separados(contas) {
+  const [contribuicoes, reservasViagem, gastosReserva] = await Promise.all([
+    ContribuicaoMeta.find({ conta: { $ne: null } }).lean(), ReservaViagem.find().lean(), Lancamento.find({ reservaViagem: true }).lean(),
+  ]);
+  if (!contribuicoes.length && !reservasViagem.length && !gastosReserva.length) return { lancamentos: [], reservas: [] };
+  const [metas, viagens, cs] = await Promise.all([Meta.find().lean(), Viagem.find().lean(), contas ? contas : Conta.find().lean()]);
+  return movimentosSeparados({ contribuicoes, metas, reservasViagem, viagens, gastosReserva, contas: cs });
+}
 async function carregarCarteira() {
   const [contas, contasRend, movsRend] = await Promise.all([Conta.find().sort({ createdAt: 1 }).lean(), ContaRendimento.find().lean(), Movimento.find().lean()]);
   const ids = contas.map((c) => c._id);
   const lancamentos = ids.length ? await Lancamento.find({ $or: [{ conta: { $in: ids } }, { contaDestino: { $in: ids } }] }).lean() : [];
-  return { contas, contasRend, movsRend, lancamentos };
+  const sep = await separados(contas);
+  return { contas, contasRend, movsRend, lancamentos: [...lancamentos, ...sep.lancamentos], reservas: sep.reservas };
 }
 const camposConta2 = ({ nome, tipo, instituicao, moeda, saldoInicial, dataInicio, cor, arquivada, limite, diaFechamento, diaVencimento, contaPagamento }) =>
   Object.fromEntries(Object.entries({
@@ -621,7 +670,8 @@ api.put('/carteira/:id', wrap(async (req, res) => {
 }));
 api.delete('/carteira/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  const usados = await Lancamento.countDocuments({ $or: [{ conta: req.params.id }, { contaDestino: req.params.id }] });
+  const usados = await Lancamento.countDocuments({ $or: [{ conta: req.params.id }, { contaDestino: req.params.id }] })
+    + await ContribuicaoMeta.countDocuments({ conta: req.params.id }) + await ReservaViagem.countDocuments({ conta: req.params.id });
   if (usados) return erro(res, 409, 'A conta tem lançamentos. Arquive em vez de apagar.', 'conta_com_lancamentos', { n: usados });
   await Recorrente.updateMany({ conta: req.params.id }, { conta: null });
   await Conta.findByIdAndDelete(req.params.id);
@@ -632,7 +682,7 @@ api.post('/carteira/:id/ajuste', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const c = await Conta.findById(req.params.id).lean();
   if (!c) return erro(res, 404, 'Conta não encontrada');
-  const lancs = await Lancamento.find({ $or: [{ conta: c._id }, { contaDestino: c._id }] }).lean();
+  const lancs = [...await Lancamento.find({ $or: [{ conta: c._id }, { contaDestino: c._id }] }).lean(), ...(await separados()).lancamentos];
   const data = req.body?.data ? new Date(`${String(req.body.data).slice(0, 10)}T12:00:00Z`) : new Date();
   const atual = saldoConta(c, lancs, data);
   const diferenca = round2(Number(req.body?.saldo) - atual);
@@ -679,16 +729,37 @@ const camposViagem = ({ nome, icone, cor, moeda, orcamento, inicio, fim, arquiva
 
 async function viagensComResumo(filtro = {}) {
   const [viagens, categorias] = await Promise.all([Viagem.find(filtro).sort({ arquivada: 1, inicio: -1, createdAt: -1 }).lean(), Categoria.find().lean()]);
-  const lancs = viagens.length ? await Lancamento.find({ viagem: { $in: viagens.map((v) => v._id) } }).lean() : [];
+  const ids = viagens.map((v) => v._id);
+  const [lancs, reservas] = ids.length ? await Promise.all([Lancamento.find({ viagem: { $in: ids } }).lean(), ReservaViagem.find({ viagem: { $in: ids } }).sort({ data: -1 }).lean()]) : [[], []];
   const conv = await conversorPorDia(lancs.map((l) => new Date(l.data).toISOString().slice(0, 10)));
-  return { viagens: viagens.map((v) => ({ ...v, ...resumoViagem(v, lancs, conv, categorias) })), lancs };
+  return { viagens: viagens.map((v) => ({ ...v, ...resumoViagem(v, lancs, conv, categorias, new Date(), reservas) })), lancs, reservas };
 }
 api.get('/viagens', wrap(async (_req, res) => res.json((await viagensComResumo()).viagens)));
 api.get('/viagens/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  const { viagens, lancs } = await viagensComResumo({ _id: req.params.id });
+  const { viagens, lancs, reservas } = await viagensComResumo({ _id: req.params.id });
   if (!viagens.length) return erro(res, 404, 'Viagem não encontrada');
-  res.json({ ...viagens[0], lancamentos: lancs.sort((a, b) => new Date(b.data) - new Date(a.data)) });
+  res.json({ ...viagens[0], lancamentos: lancs.sort((a, b) => new Date(b.data) - new Date(a.data)), reservas });
+}));
+/** Separa dinheiro de uma conta para a viagem (devolver = valor negativo, volta para a conta) */
+api.post('/viagens/:id/reservas', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const v = await Viagem.findById(req.params.id).lean();
+  if (!v) return erro(res, 404, 'Viagem não encontrada');
+  const conta = await contaDeOrigem(validarId(req.body?.conta) ? req.body.conta : null);
+  if (!conta) return erro(res, 400, 'Escolha a conta', 'escolha_origem');
+  // valor na moeda da viagem; valorConta (opcional) é o que sai da conta, quando a moeda é outra
+  const valor = round2(Number(req.body?.valor));
+  if (!valor) return erro(res, 400, 'Informe um valor', 'dados_invalidos');
+  const data = req.body?.data ? new Date(`${String(req.body.data).slice(0, 10)}T12:00:00Z`) : new Date();
+  const naConta = await valorNaMoedaDaConta(conta, valor, v.moeda, req.body?.valorConta, data);
+  const [valorConta, valorViagem] = naConta == null ? [valor, null] : [naConta, valor];
+  res.status(201).json(await ReservaViagem.create({ viagem: v._id, conta: conta._id, valor: valorConta, valorViagem, data, nota: String(req.body?.nota || '').slice(0, 200) }));
+}));
+api.delete('/reservas-viagem/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  await ReservaViagem.findByIdAndDelete(req.params.id);
+  res.status(204).end();
 }));
 api.post('/viagens', wrap(async (req, res) => res.status(201).json(await Viagem.create(camposViagem(req.body)))));
 api.put('/viagens/:id', wrap(async (req, res) => {
@@ -698,7 +769,8 @@ api.put('/viagens/:id', wrap(async (req, res) => {
 }));
 api.delete('/viagens/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  await Lancamento.updateMany({ viagem: req.params.id }, { viagem: null });
+  await Lancamento.updateMany({ viagem: req.params.id }, { viagem: null, reservaViagem: false, valorConta: null });
+  await ReservaViagem.deleteMany({ viagem: req.params.id });
   await Viagem.findByIdAndDelete(req.params.id);
   res.status(204).end();
 }));
@@ -736,12 +808,12 @@ api.get('/lembretes', wrap(async (req, res) => {
 
 // ---------- backup ----------
 api.get('/exportar', wrap(async (_req, res) => {
-  const [categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens] = await Promise.all([
+  const [categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens, reservasViagem] = await Promise.all([
     Categoria.find().lean(), Lancamento.find().lean(), Recorrente.find().lean(), ContaRendimento.find().lean(), Movimento.find().lean(),
-    Meta.find().lean(), ContribuicaoMeta.find().lean(), RegraCategoria.find().lean(), Conta.find().lean(), Viagem.find().lean(),
+    Meta.find().lean(), ContribuicaoMeta.find().lean(), RegraCategoria.find().lean(), Conta.find().lean(), Viagem.find().lean(), ReservaViagem.find().lean(),
   ]);
   res.setHeader('Content-Disposition', `attachment; filename="minhas-financas-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ versao: 4, exportadoEm: new Date(), categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens });
+  res.json({ versao: 5, exportadoEm: new Date(), categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens, reservasViagem });
 }));
 
 export default api;

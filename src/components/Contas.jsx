@@ -7,7 +7,7 @@ import { Barra, BotaoConfirmar, Campo, Carregando, Modal, Segmentado, SeletorMes
 import { FormLancamento, ItemLancamento } from './Lancamentos.jsx';
 import Icone from './Icones.jsx';
 
-const GRUPOS = ['corrente', 'rendimento', 'investimento', 'cartao', 'divida'];
+const GRUPOS = ['corrente', 'rendimento', 'investimento', 'separado', 'cartao', 'divida'];
 const ICONE_TIPO = { corrente: 'banco', dinheiro: 'banco', investimento: 'rendimento', rendimento: 'rendimento', divida: 'menos', cartao: 'lista' };
 const CORES = ['#2952eb', '#0d8c54', '#e0672b', '#8b5cf6', '#db2777', '#0ea5a4', '#c47a0a', '#475569'];
 const ESTADO_FATURA = { aberta: 'bg-marca-suave text-marca', fechada: 'bg-aviso-suave text-aviso', vencida: 'bg-neg-suave text-neg', paga: 'bg-pos-suave text-pos', vazia: 'bg-sutil text-texto-3' };
@@ -25,7 +25,7 @@ export default function Contas({ base, categorias, irPara }) {
   if (!dados) return <Carregando />;
   const ativas = dados.contas.filter((c) => !c.arquivada);
   const arquivadas = dados.contas.filter((c) => c.arquivada);
-  const grupo = (g) => g === 'corrente' ? ativas.filter((c) => c.tipo === 'corrente' || c.tipo === 'dinheiro') : g === 'rendimento' ? dados.rendimento : ativas.filter((c) => c.tipo === g);
+  const grupo = (g) => g === 'separado' ? dados.patrimonio.itens.filter((i) => i.tipo === 'separado') : g === 'corrente' ? ativas.filter((c) => c.tipo === 'corrente' || c.tipo === 'dinheiro') : g === 'rendimento' ? dados.rendimento : ativas.filter((c) => c.tipo === g);
   const p = dados.patrimonio;
   const vazio = !dados.contas.length && !dados.rendimento.length;
 
@@ -58,8 +58,18 @@ export default function Contas({ base, categorias, irPara }) {
             <h3 className="mb-2 px-1 text-base">{t(`contas.grupos.${g}`)}</h3>
             <ul className="cartao divide-y divide-linha overflow-hidden">
               {lista.map((c) => (
-                <li key={c._id}>
-                  {g === 'rendimento'
+                <li key={`${g}-${c._id}`}>
+                  {g === 'separado' ? (
+                    <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-sutil/60" onClick={() => irPara(c.origem === 'meta' ? 'metas' : 'viagens')}>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-marca-suave text-lg">{c.icone || '•'}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold">{c.nome}</span>
+                        <span className="block text-xs text-texto-3">{t(c.origem === 'meta' ? 'abas.metas' : 'abas.viagens')}</span>
+                      </span>
+                      <span className="text-right"><span className="num block text-sm font-bold">{dinheiro(c.saldo, c.moeda)}</span>
+                        {c.moeda !== base && <span className="num block text-xs text-texto-3">≈ {dinheiro(c.saldoBase, base)}</span>}</span>
+                    </button>
+                  ) : g === 'rendimento'
                     ? <LinhaConta conta={{ ...c, tipo: 'rendimento' }} base={base} detalhe={t('contas.jurosMes', { v: dinheiro(c.jurosMes, c.moeda) })} aoAbrir={() => irPara('rendimento')} />
                     : <LinhaConta conta={c} base={base} aoAbrir={() => setAberta(c._id)} />}
                 </li>

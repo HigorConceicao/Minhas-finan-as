@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { del, get, post, put } from '../api.js';
-import { dataCurta, dinheiro, lerNumero, paraCampo, paraInput } from '../fmt.js';
+import { dataCurta, dinheiro, hojeISO, lerNumero, paraCampo, paraInput } from '../fmt.js';
 import { useT } from '../i18n.js';
 import { useDados } from '../dados.jsx';
-import { Barra, BotaoConfirmar, Campo, Carregando, Modal, Vazio, useAviso } from './ui.jsx';
+import { Barra, BotaoConfirmar, Campo, Carregando, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
 import { FormLancamento, ItemLancamento } from './Lancamentos.jsx';
 import Icone from './Icones.jsx';
+import SeletorOrigem, { lembrarOrigem, origemInicial } from './Origem.jsx';
 
 const ESTADO = { ok: 'bg-pos-suave text-pos', alerta: 'bg-aviso-suave text-aviso', estourado: 'bg-neg-suave text-neg', 'sem-orcamento': 'bg-sutil text-texto-2' };
 const ICONES = ['✈️', '🏖️', '🏔️', '🚆', '🚗', '🗽', '🏝️', '🎒', '⛺', '🇧🇷', '🇩🇪', '🇮🇹'];
@@ -87,6 +88,7 @@ function CartaoViagem({ v, aoAbrir }) {
           {v.restante != null && <span className={v.restante < 0 ? 'text-neg' : 'text-texto-2'}>{v.restante < 0 ? t('viag.passou', { v: dinheiro(-v.restante, v.moeda) }) : t('viag.restante', { v: dinheiro(v.restante, v.moeda) })}</span>}
           {v.porDiaRestante != null && v.restante > 0 && <span className="text-texto-3">{t('viag.porDia', { v: dinheiro(v.porDiaRestante, v.moeda) })}</span>}
         </span>
+        {v.temReserva && <span className="mt-2 block text-xs font-semibold text-texto-2">{t('viag.separado')}: <span className="num">{dinheiro(v.saldoReserva, v.moeda)}</span></span>}
       </span>
     </button>
   );
@@ -97,11 +99,14 @@ function DetalheViagem({ id, categorias, aoFechar, aoEditar, aoMudar }) {
   const avisar = useAviso();
   const [v, setV] = useState(null);
   const [form, setForm] = useState(null);
+  const [reserva, setReserva] = useState(null); // 'separar' | 'devolver'
+  const { contas, recarregar } = useDados();
+  const nomeConta = (cid) => contas.find((c) => c._id === cid)?.nome || '—';
   const catMap = useMemo(() => new Map(categorias.map((c) => [c._id, c])), [categorias]);
   const carregar = useCallback(async () => { if (id) setV(await get(`/viagens/${id}`)); }, [id]);
   useEffect(() => { setV(null); carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar]);
   if (!id) return null;
-  const depois = async (msg) => { await Promise.all([carregar(), aoMudar()]); avisar(msg); };
+  const depois = async (msg) => { await Promise.all([carregar(), aoMudar(), recarregar()]); avisar(msg); };
 
   return (
     <Modal titulo={v ? `${v.icone} ${v.nome}` : '…'} aberto={!!id} aoFechar={aoFechar}>
@@ -122,7 +127,43 @@ function DetalheViagem({ id, categorias, aoFechar, aoEditar, aoMudar }) {
             )}
           </div>
 
-          <button className="btn-primario w-full" onClick={() => setForm({ viagem: v._id, moeda: v.moeda })}><Icone nome="mais" className="h-4 w-4" forte />{t('viag.adicionarGasto')}</button>
+          <button className="btn-primario w-full" onClick={() => setForm({ viagem: v._id, moeda: v.moeda, ...(v.temReserva && v.saldoReserva > 0 ? { conta: '__reserva' } : {}) })}><Icone nome="mais" className="h-4 w-4" forte />{t('viag.adicionarGasto')}</button>
+
+          <div className="rounded-2xl border border-linha p-4">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <p className="font-bold">{t('viag.separado')}</p>
+              {v.temReserva && <p className={`num text-lg font-extrabold ${v.saldoReserva < 0 ? 'text-neg' : ''}`}>{dinheiro(v.saldoReserva, v.moeda)}</p>}
+            </div>
+            {!v.temReserva ? (
+              <>
+                <p className="mb-3 text-sm text-texto-2">{t('viag.separadoDica')}</p>
+                <button className="btn-secundario w-full" onClick={() => setReserva('separar')}>{t('viag.separar')}</button>
+              </>
+            ) : (
+              <>
+                <p className="num mb-3 text-xs text-texto-3">{t('viag.separadoResumo', { s: dinheiro(v.reservado, v.moeda), g: dinheiro(v.gastoReserva, v.moeda) })}</p>
+                <ul className="mb-3 divide-y divide-linha text-sm">
+                  {v.reservas.map((r) => (
+                    <li key={r._id} className="flex items-center gap-2 py-2">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold">{r.valor < 0 ? t('viag.devolvidoPara', { n: nomeConta(r.conta) }) : t('viag.separadoDe', { n: nomeConta(r.conta) })}</span>
+                        <span className="block text-xs text-texto-3">{dataCurta(r.data)}{r.valorViagem != null && <> · {dinheiro(Math.abs(r.valor), contas.find((c) => c._id === r.conta)?.moeda || v.moeda)}</>}</span>
+                      </span>
+                      <span className={`num font-bold ${r.valor < 0 ? 'text-neg' : 'text-pos'}`}>{r.valor < 0 ? '−' : '+'}{dinheiro(Math.abs(r.valorViagem ?? r.valor), v.moeda)}</span>
+                      <BotaoConfirmar className="rounded-full p-2 text-texto-3 hover:bg-neg-suave hover:text-neg" rotulo={t('comum.apagar')} texto={t('comum.apagar')}
+                        aoConfirmar={async () => { await del(`/reservas-viagem/${r._id}`); await depois(t('viag.reservaApagada')); }}>
+                        <Icone nome="lixo" className="h-4 w-4" />
+                      </BotaoConfirmar>
+                    </li>
+                  ))}
+                </ul>
+                <div className="grid grid-cols-2 gap-2">
+                  <button className="btn-secundario" onClick={() => setReserva('separar')}>{t('viag.separarMais')}</button>
+                  <button className="btn-secundario" disabled={!(v.saldoReserva > 0)} onClick={() => setReserva('devolver')}>{t('viag.devolver')}</button>
+                </div>
+              </>
+            )}
+          </div>
 
           {v.porCategoria.length > 0 && (
             <div>
@@ -161,6 +202,8 @@ function DetalheViagem({ id, categorias, aoFechar, aoEditar, aoMudar }) {
           </div>
         </div>
       )}
+      {v && <ModalReserva aberto={!!reserva} modo={reserva} viagem={v} aoFechar={() => setReserva(null)}
+        aoSalvar={async (msg) => { setReserva(null); await depois(msg); }} />}
       <FormLancamento aberto={form !== null} item={form} categorias={categorias} aoFechar={() => setForm(null)}
         aoSalvar={async () => { setForm(null); await depois(t('lanc.salvo')); }}
         aoApagar={async (lid, todas) => { await del(`/lancamentos/${lid}${todas ? '?todas=1' : ''}`); setForm(null); await depois(t('lanc.apagado')); }} />
@@ -222,6 +265,55 @@ function FormViagem({ aberto, viagem, aoFechar, aoSalvar, aoApagar }) {
             <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
             <button className="btn-primario">{t('comum.salvar')}</button>
           </div>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Separar dinheiro de uma conta para a viagem, ou devolver o que sobrou */
+function ModalReserva({ aberto, modo, viagem, aoFechar, aoSalvar }) {
+  const t = useT();
+  const avisar = useAviso();
+  const { contas } = useDados();
+  const [f, setF] = useState({});
+  const [tipo, setTipo] = useState(modo);
+  useEffect(() => {
+    if (!aberto) return;
+    setTipo(modo);
+    setF({ valor: modo === 'devolver' ? paraCampo(viagem.saldoReserva) : '', valorConta: '', data: hojeISO(), conta: origemInicial(contas, true), nota: '' });
+  }, [aberto]); // eslint-disable-line react-hooks/exhaustive-deps
+  const devolver = tipo === 'devolver';
+  const salvar = async (e) => {
+    e.preventDefault();
+    const v = lerNumero(f.valor);
+    if (!(v > 0)) return avisar(t('lanc.informeValor'), 'erro');
+    if (!f.conta) return avisar(t('erro.escolha_origem'), 'erro');
+    if (devolver && v > viagem.saldoReserva + 0.004) return avisar(t('viag.devolverMais', { v: dinheiro(viagem.saldoReserva, viagem.moeda) }), 'erro');
+    const vc = lerNumero(f.valorConta);
+    try {
+      await post(`/viagens/${viagem._id}/reservas`, { conta: f.conta, valor: devolver ? -v : v, valorConta: vc > 0 ? (devolver ? -vc : vc) : null, data: f.data, nota: f.nota });
+      lembrarOrigem(f.conta);
+      aoSalvar(t(devolver ? 'viag.devolvido' : 'viag.separadoOk'));
+    } catch (err) { avisar(err.message, 'erro'); }
+  };
+  return (
+    <Modal titulo={devolver ? t('viag.devolverTitulo') : t('viag.separarTitulo', { n: viagem.nome })} aberto={aberto} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="space-y-4">
+        {viagem.temReserva && <Segmentado valor={tipo} aoMudar={(k) => { setTipo(k); if (k === 'devolver') setF((x) => ({ ...x, valor: paraCampo(viagem.saldoReserva) })); }}
+          opcoes={[['separar', t('viag.separarCurto')], ['devolver', t('viag.devolver')]]} />}
+        <div className="grid grid-cols-2 gap-3">
+          <Campo rotulo={`${t('comum.valor')} (${viagem.moeda})`} dica={devolver ? t('viag.sobra', { v: dinheiro(viagem.saldoReserva, viagem.moeda) }) : null}>
+            <input id="res-valor" className="campo num text-xl font-bold" inputMode="decimal" value={f.valor ?? ''} onChange={(e) => setF((x) => ({ ...x, valor: e.target.value, valorConta: '' }))} placeholder={t('comum.zero')} autoFocus />
+          </Campo>
+          <Campo rotulo={t('comum.data')}><input id="res-data" type="date" className="campo" value={f.data || ''} onChange={(e) => setF((x) => ({ ...x, data: e.target.value }))} /></Campo>
+        </div>
+        <SeletorOrigem obrigatoria conta={f.conta} aoMudar={(id) => setF((x) => ({ ...x, conta: id }))} valor={f.valor} moeda={viagem.moeda}
+          valorConta={f.valorConta} aoMudarValorConta={(v) => setF((x) => ({ ...x, valorConta: v }))} volta={devolver}
+          dica={devolver ? t('viag.devolverDica') : t('viag.separarDica')} />
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
+          <button className="btn-primario">{devolver ? t('viag.devolver') : t('viag.separarCurto')}</button>
         </div>
       </form>
     </Modal>

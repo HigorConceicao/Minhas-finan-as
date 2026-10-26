@@ -546,6 +546,56 @@ en.lemb = {
   demo: 'Notifications are off in the demo.', ativadas: 'Notifications turned on', desativadas: 'Notifications turned off', erro: 'Couldn’t turn on notifications.',
 };
 
+
+pt.orig = {
+  deOnde: 'De onde sai o dinheiro?', paraOnde: 'Para onde volta o dinheiro?', nenhuma: 'Não descontar de nenhuma conta', nenhumaVolta: 'Não devolver a nenhuma conta',
+  saiDaConta: 'Sai da conta ({m})', voltaNaConta: 'Entra na conta ({m})', depois: 'Saldo de {n} depois', negativa: 'A conta vai ficar negativa.',
+  semContas: 'Cadastre uma conta corrente em Contas para descontar o valor do saldo.',
+  dicaMeta: 'O valor sai do saldo da conta e fica guardado na meta. O patrimônio não muda.', dicaMetaVolta: 'O valor sai da meta e volta para o saldo da conta.',
+};
+de.orig = {
+  deOnde: 'Von welchem Konto?', paraOnde: 'Auf welches Konto zurück?', nenhuma: 'Von keinem Konto abziehen', nenhumaVolta: 'Auf kein Konto zurückbuchen',
+  saiDaConta: 'Abbuchung vom Konto ({m})', voltaNaConta: 'Gutschrift aufs Konto ({m})', depois: 'Saldo {n} danach', negativa: 'Das Konto rutscht ins Minus.',
+  semContas: 'Lege unter Konten ein Girokonto an, um den Betrag vom Saldo abzuziehen.',
+  dicaMeta: 'Der Betrag geht vom Kontosaldo ab und liegt im Sparziel. Dein Vermögen ändert sich nicht.', dicaMetaVolta: 'Der Betrag geht aus dem Sparziel zurück aufs Konto.',
+};
+en.orig = {
+  deOnde: 'Where is the money coming from?', paraOnde: 'Where does the money go back to?', nenhuma: 'Don’t take it from an account', nenhumaVolta: 'Don’t put it back in an account',
+  saiDaConta: 'Taken from account ({m})', voltaNaConta: 'Back into account ({m})', depois: '{n} balance after', negativa: 'The account will go negative.',
+  semContas: 'Add a current account under Accounts to take the amount from its balance.',
+  dicaMeta: 'The amount leaves the account balance and sits in the goal. Your net worth doesn’t change.', dicaMetaVolta: 'The amount leaves the goal and goes back to the account.',
+};
+Object.assign(pt.erro, { conta_origem_invalida: 'Escolha uma conta corrente, dinheiro ou investimento.' });
+Object.assign(de.erro, { conta_origem_invalida: 'Wähle ein Girokonto, Bargeld oder ein Depot.' });
+Object.assign(en.erro, { conta_origem_invalida: 'Choose a current account, cash or an investment account.' });
+Object.assign(pt.lanc, { daReserva: 'dinheiro separado', dinheiroSeparado: 'Dinheiro da viagem ({v})', sep: { meta: 'Guardado na meta', metaVolta: 'Retirado da meta', viagem: 'Separado para a viagem', viagemVolta: 'Devolvido da viagem' } });
+Object.assign(de.lanc, { daReserva: 'Reisegeld', dinheiroSeparado: 'Reisegeld ({v})', sep: { meta: 'Ins Sparziel', metaVolta: 'Aus dem Sparziel', viagem: 'Für die Reise zurückgelegt', viagemVolta: 'Von der Reise zurück' } });
+Object.assign(en.lanc, { daReserva: 'trip money', dinheiroSeparado: 'Trip money ({v})', sep: { meta: 'Saved into goal', metaVolta: 'Taken from goal', viagem: 'Set aside for trip', viagemVolta: 'Returned from trip' } });
+Object.assign(pt.viag, {
+  separado: 'Dinheiro separado', separadoDica: 'Tire um valor da conta para gastar na viagem. Os gastos pagos com ele saem daqui, sem mexer na conta de novo.',
+  separar: 'Separar dinheiro de uma conta', separarMais: 'Separar mais', separarCurto: 'Separar', devolver: 'Devolver sobra', separadoResumo: 'Separado {s} · gasto com ele {g}',
+  separadoDe: 'Separado de {n}', devolvidoPara: 'Devolvido para {n}', separarTitulo: 'Separar para “{n}”', devolverTitulo: 'Devolver para a conta',
+  separarDica: 'O valor sai do saldo da conta e fica reservado para a viagem.', devolverDica: 'O que sobrou volta para o saldo da conta.',
+  sobra: 'Sobra {v}', devolverMais: 'Só há {v} separado.', devolvido: 'Valor devolvido à conta', separadoOk: 'Dinheiro separado', reservaApagada: 'Movimento apagado',
+});
+Object.assign(de.viag, {
+  separado: 'Reisegeld', separadoDica: 'Nimm einen Betrag vom Konto für die Reise. Ausgaben damit werden hier abgezogen, ohne das Konto erneut zu belasten.',
+  separar: 'Geld von einem Konto zurücklegen', separarMais: 'Mehr zurücklegen', separarCurto: 'Zurücklegen', devolver: 'Rest zurückbuchen', separadoResumo: 'Zurückgelegt {s} · davon ausgegeben {g}',
+  separadoDe: 'Von {n}', devolvidoPara: 'Zurück auf {n}', separarTitulo: 'Für „{n}“ zurücklegen', devolverTitulo: 'Aufs Konto zurückbuchen',
+  separarDica: 'Der Betrag geht vom Kontosaldo ab und ist für die Reise reserviert.', devolverDica: 'Der Rest geht zurück auf das Konto.',
+  sobra: 'Noch {v}', devolverMais: 'Es sind nur {v} zurückgelegt.', devolvido: 'Zurückgebucht', separadoOk: 'Geld zurückgelegt', reservaApagada: 'Gelöscht',
+});
+Object.assign(en.viag, {
+  separado: 'Trip money', separadoDica: 'Take an amount from an account to spend on the trip. Expenses paid with it come out of here, without touching the account again.',
+  separar: 'Set money aside from an account', separarMais: 'Set aside more', separarCurto: 'Set aside', devolver: 'Return what’s left', separadoResumo: 'Set aside {s} · spent from it {g}',
+  separadoDe: 'From {n}', devolvidoPara: 'Back to {n}', separarTitulo: 'Set aside for “{n}”', devolverTitulo: 'Return to account',
+  separarDica: 'The amount leaves the account balance and is reserved for the trip.', devolverDica: 'What’s left goes back to the account balance.',
+  sobra: '{v} left', devolverMais: 'Only {v} is set aside.', devolvido: 'Returned to account', separadoOk: 'Money set aside', reservaApagada: 'Deleted',
+});
+Object.assign(pt.contas.grupos, { separado: 'Separado para metas e viagens' });
+Object.assign(de.contas.grupos, { separado: 'Für Sparziele und Reisen zurückgelegt' });
+Object.assign(en.contas.grupos, { separado: 'Set aside for goals and trips' });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

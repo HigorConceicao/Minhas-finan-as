@@ -147,8 +147,8 @@ export function gerarParcelas(base, parcelas, grupo) {
  * Patrimônio numa data: contas (convertidas para a moeda base) + contas de rendimento.
  * `conv(valor, moeda)` converte para a moeda base.
  */
-export function patrimonio({ contas, lancamentos, contasRend = [], movsRend = [], conv, ate = new Date() }) {
-  const porTipo = { corrente: 0, dinheiro: 0, investimento: 0, rendimento: 0, divida: 0, cartao: 0 };
+export function patrimonio({ contas, lancamentos, contasRend = [], movsRend = [], reservas = [], conv, ate = new Date() }) {
+  const porTipo = { corrente: 0, dinheiro: 0, investimento: 0, rendimento: 0, divida: 0, cartao: 0, separado: 0 };
   const itens = [];
   for (const c of contas.filter((x) => !x.arquivada)) {
     if (c.dataInicio && t(c.dataInicio) > t(ate)) continue; // a conta ainda não existia
@@ -164,6 +164,19 @@ export function patrimonio({ contas, lancamentos, contasRend = [], movsRend = []
     const b = round2(conv(s, c.moeda));
     porTipo.rendimento = round2(porTipo.rendimento + b);
     itens.push({ _id: c._id, nome: c.nome, tipo: 'rendimento', moeda: c.moeda, saldo: s, saldoBase: b });
+  }
+  const sep = new Map();
+  for (const r of reservas) {
+    if (t(r.data) > t(ate)) continue;
+    if (!sep.has(r.chave)) sep.set(r.chave, { _id: r.ref, nome: r.nome, icone: r.icone, tipo: 'separado', origem: r.tipo, moeda: r.moeda, saldo: 0 });
+    sep.get(r.chave).saldo += r.valor;
+  }
+  for (const r of sep.values()) {
+    r.saldo = round2(r.saldo);
+    if (Math.abs(r.saldo) < 0.005) continue;
+    r.saldoBase = round2(conv(r.saldo, r.moeda));
+    porTipo.separado = round2(porTipo.separado + r.saldoBase);
+    itens.push(r);
   }
   const ativos = round2(itens.filter((i) => i.saldoBase > 0).reduce((s, i) => s + i.saldoBase, 0));
   const passivos = round2(-itens.filter((i) => i.saldoBase < 0).reduce((s, i) => s + i.saldoBase, 0));
@@ -190,7 +203,7 @@ export function seriePatrimonio(args, n = 12, hoje = new Date()) {
  * por categoria e por moeda, quanto sobra e se passou do orçamento.
  * `convNaData(valor, de, para, dataISO)` converte usando o câmbio daquele dia.
  */
-export function resumoViagem(viagem, lancamentos, convNaData, categorias = [], hoje = new Date()) {
+export function resumoViagem(viagem, lancamentos, convNaData, categorias = [], hoje = new Date(), reservas = []) {
   const id = idDe(viagem);
   const daViagem = lancamentos.filter((l) => idDe(l.viagem) === id && l.tipo !== 'transferencia');
   let gasto = 0;
@@ -219,7 +232,61 @@ export function resumoViagem(viagem, lancamentos, convNaData, categorias = [], h
     porCategoria: [...porCategoria.entries()].map(([k, v]) => ({ categoria: k === 'sem' ? null : k, nome: catNome.get(k)?.nome || null, icone: catNome.get(k)?.icone || '•', cor: catNome.get(k)?.cor || '#8a92a3', valor: round2(v) })).sort((a, b) => b.valor - a.valor),
     porMoeda: [...porMoeda.entries()].map(([moeda, v]) => ({ moeda, valor: round2(v) })),
     quantidade: daViagem.length,
+    ...reservaDaViagem(viagem, reservas, daViagem),
   };
+}
+
+/**
+ * Dinheiro separado para a viagem: o que saiu das contas (na moeda da viagem),
+ * menos os gastos pagos com esse dinheiro (`reservaViagem`), mais nada do resto.
+ */
+export function reservaDaViagem(viagem, reservas, gastos) {
+  const id = idDe(viagem);
+  const minhas = reservas.filter((r) => idDe(r.viagem) === id);
+  const reservado = round2(minhas.reduce((s, r) => s + Number(r.valorViagem ?? r.valor), 0));
+  const gastoReserva = round2(gastos.filter((l) => l.reservaViagem && idDe(l.viagem) === id)
+    .reduce((s, l) => s + (l.tipo === 'receita' ? -1 : 1) * Number(l.valorConta ?? l.valor), 0));
+  return { reservado, gastoReserva, saldoReserva: round2(reservado - gastoReserva), temReserva: minhas.length > 0 };
+}
+
+// ---------- dinheiro separado (metas e viagens) ----------
+
+/**
+ * Depósitos em metas e dinheiro separado para viagens que saíram de uma conta.
+ * Viram "transferências" para fora da conta (o saldo da conta cai) e entram no patrimônio
+ * como dinheiro separado, para o patrimônio não mudar com a separação.
+ * Devolve `lancamentos` (para os saldos das contas) e `reservas` (entradas para o patrimônio).
+ */
+export function movimentosSeparados({ contribuicoes = [], metas = [], reservasViagem = [], viagens = [], gastosReserva = [], contas = [] }) {
+  const lancamentos = [], reservas = [];
+  const moedaConta = new Map(contas.map((c) => [idDe(c), c.moeda]));
+  const metaDe = new Map(metas.map((m) => [idDe(m), m]));
+  const viagemDe = new Map(viagens.map((v) => [idDe(v), v]));
+  const sair = (origem, x, alvo, tipo, valorAlvo, moedaAlvo) => {
+    const conta = idDe(x.conta);
+    const naConta = Number(x.valorConta ?? x.valor);
+    const base = { _id: `sep-${idDe(x)}`, tipo: 'transferencia', separado: tipo, ref: idDe(alvo), descricao: alvo.nome, data: x.data, moeda: moedaConta.get(conta) || moedaAlvo, nota: x.nota || '' };
+    if (naConta >= 0) lancamentos.push({ ...base, conta, contaDestino: null, valor: round2(naConta) });
+    else lancamentos.push({ ...base, conta: null, contaDestino: conta, valor: round2(-naConta) });
+    reservas.push({ chave: `${tipo}:${idDe(alvo)}`, ref: idDe(alvo), tipo, nome: alvo.nome, icone: alvo.icone, moeda: moedaAlvo, data: x.data, valor: Number(valorAlvo) });
+  };
+  for (const c of contribuicoes) {
+    const m = metaDe.get(idDe(c.meta));
+    if (!c.conta || !m) continue;
+    sair('meta', c, m, 'meta', c.valor, m.moeda);
+  }
+  for (const r of reservasViagem) {
+    const v = viagemDe.get(idDe(r.viagem));
+    if (!r.conta || !v) continue;
+    sair('viagem', r, v, 'viagem', r.valorViagem ?? r.valor, v.moeda);
+  }
+  // gastos pagos com o dinheiro separado diminuem a reserva
+  for (const l of gastosReserva) {
+    const v = viagemDe.get(idDe(l.viagem));
+    if (!l.reservaViagem || !v) continue;
+    reservas.push({ chave: `viagem:${idDe(v)}`, ref: idDe(v), tipo: 'viagem', nome: v.nome, icone: v.icone, moeda: v.moeda, data: l.data, valor: (l.tipo === 'receita' ? 1 : -1) * Number(l.valorConta ?? l.valor) });
+  }
+  return { lancamentos, reservas };
 }
 
 // ---------- relatório anual ----------

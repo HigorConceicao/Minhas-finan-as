@@ -38,6 +38,8 @@ export const Lancamento = model(
       valorDestino: { type: Number, default: null },
       // compra numa moeda diferente da conta: quanto foi cobrado na moeda da conta
       valorConta: { type: Number, default: null },
+      // gasto pago com o dinheiro separado para a viagem (não mexe em nenhuma conta)
+      reservaViagem: { type: Boolean, default: false },
       fatura: { type: String, default: null }, // pagamento de cartão: 'AAAA-MM' da fatura paga
       ajuste: { type: Boolean, default: false }, // correção de saldo: não conta como receita/despesa
       viagem: { type: Schema.Types.ObjectId, ref: 'Viagem', default: null, index: true },
@@ -131,7 +133,26 @@ export const ContribuicaoMeta = model(
       meta: { type: Schema.Types.ObjectId, ref: 'Meta', required: true, index: true },
       valor: { type: Number, required: true }, // negativo = retirada
       data: { type: Date, required: true },
+      // de qual conta saiu (ou para qual voltou, na retirada); sem conta, é só um registro
+      conta: { type: Schema.Types.ObjectId, ref: 'Conta', default: null, index: true },
+      valorConta: { type: Number, default: null }, // na moeda da conta, quando difere da meta
       pessoa: { type: String, default: '' },
+      nota: { type: String, default: '' },
+    },
+    opts
+  )
+);
+
+// dinheiro separado de uma conta para gastar numa viagem (negativo = devolvido à conta)
+export const ReservaViagem = model(
+  'ReservaViagem',
+  new Schema(
+    {
+      viagem: { type: Schema.Types.ObjectId, ref: 'Viagem', required: true, index: true },
+      conta: { type: Schema.Types.ObjectId, ref: 'Conta', required: true, index: true },
+      valor: { type: Number, required: true }, // na moeda da conta
+      valorViagem: { type: Number, default: null }, // na moeda da viagem, quando difere
+      data: { type: Date, required: true },
       nota: { type: String, default: '' },
     },
     opts

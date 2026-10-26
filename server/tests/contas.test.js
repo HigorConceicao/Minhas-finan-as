@@ -131,3 +131,24 @@ test('compra em outra moeda usa o valor cobrado na conta', async () => {
   const p = gerarParcelas({ tipo: 'despesa', valor: 100, valorConta: 16.66, data: '2026-03-10T12:00:00Z' }, 3, 'g');
   assert.deepEqual(p.map((x) => x.valorConta), [5.56, 5.55, 5.55]);
 });
+
+test('dinheiro separado para meta e viagem sai da conta sem mudar o patrimônio', async () => {
+  const { movimentosSeparados, saldoConta, patrimonio, resumoViagem } = await import('../contas.js');
+  const conta = { _id: 'c', tipo: 'corrente', moeda: 'EUR', saldoInicial: 1000, dataInicio: '2026-01-01T12:00:00Z' };
+  const meta = { _id: 'm', nome: 'Casa', moeda: 'EUR' };
+  const viagem = { _id: 'v', nome: 'Rio', moeda: 'BRL', orcamento: 0 };
+  const contribuicoes = [
+    { _id: 'k1', meta: 'm', conta: 'c', valor: 100, data: '2026-02-01T12:00:00Z' },
+    { _id: 'k2', meta: 'm', conta: 'c', valor: -30, data: '2026-02-02T12:00:00Z' },
+    { _id: 'k3', meta: 'm', conta: null, valor: 500, data: '2026-02-02T12:00:00Z' }, // só registro
+  ];
+  const reservasViagem = [{ _id: 'r1', viagem: 'v', conta: 'c', valor: 200, valorViagem: 1200, data: '2026-02-03T12:00:00Z' }];
+  const gastos = [{ _id: 'g1', tipo: 'despesa', viagem: 'v', reservaViagem: true, valor: 300, moeda: 'BRL', data: '2026-02-04T12:00:00Z' }];
+  const sep = movimentosSeparados({ contribuicoes, metas: [meta], reservasViagem, viagens: [viagem], gastosReserva: gastos, contas: [conta] });
+  assert.equal(saldoConta(conta, sep.lancamentos), 1000 - 100 + 30 - 200);
+  const conv = (v, m) => (m === 'BRL' ? v / 6 : v);
+  const p = patrimonio({ contas: [conta], lancamentos: sep.lancamentos, reservas: sep.reservas.filter((r) => r.tipo === 'meta' || true), conv, ate: new Date('2026-02-03T23:00:00Z') });
+  assert.equal(p.liquido, 1000); // antes do gasto na viagem: só mudou de lugar
+  const r = resumoViagem(viagem, gastos, (v) => v, [], new Date('2026-02-05'), reservasViagem);
+  assert.deepEqual([r.reservado, r.gastoReserva, r.saldoReserva], [1200, 300, 900]);
+});

@@ -3,7 +3,7 @@ import {
   metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
 } from '../../server/finance.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados,
 } from '../../server/contas.js';
 
 const TAXAS = { EUR: 1, BRL: 6.2, USD: 1.08 };
@@ -21,7 +21,7 @@ const paraData = (v) => {
 
 class Erro extends Error { constructor(status, msg, codigo = null, dados) { super(msg); this.status = status; this.codigo = codigo; this.dados = dados; } }
 
-const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [], metas: [], contribuicoes: [], regras: [], carteira: [], viagens: [] };
+const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [], metas: [], contribuicoes: [], regras: [], carteira: [], viagens: [], reservasViagem: [] };
 
 // ---------- dados de exemplo ----------
 function semear() {
@@ -43,7 +43,7 @@ function semear() {
   const hojeDia = hoje.getUTCDate();
 
   // contas do dia a dia, cartão, investimento e dívida
-  const giro = add('carteira', { nome: 'Conta corrente', tipo: 'corrente', instituicao: 'Sparkasse', moeda: 'EUR', saldoInicial: 2850, dataInicio: dia(-12, 1), cor: '#2952eb', arquivada: false });
+  const giro = add('carteira', { nome: 'Conta corrente', tipo: 'corrente', instituicao: 'Sparkasse', moeda: 'EUR', saldoInicial: 5600, dataInicio: dia(-12, 1), cor: '#2952eb', arquivada: false });
   add('carteira', { nome: 'Dinheiro', tipo: 'dinheiro', instituicao: '', moeda: 'EUR', saldoInicial: 140, dataInicio: dia(-12, 1), cor: '#0d8c54', arquivada: false });
   const cartao = add('carteira', { nome: 'Cartão Visa', tipo: 'cartao', instituicao: 'DKB', moeda: 'EUR', saldoInicial: 0, dataInicio: dia(-12, 1), cor: '#475569', arquivada: false,
     limite: 2500, diaFechamento: 20, diaVencimento: 5, contaPagamento: giro._id });
@@ -77,8 +77,10 @@ function semear() {
   // viagem em andamento, com gastos em reais e euros
   const emDias = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return `${d.toISOString().slice(0, 10)}T12:00:00.000Z`; };
   const rio = add('viagens', { nome: 'Rio de Janeiro', icone: '🏖️', cor: '#e0672b', moeda: 'BRL', orcamento: 9000, inicio: emDias(-4), fim: emDias(6), arquivada: false });
-  for (const [d, cat, v, m, n] of [['Voo Frankfurt–Rio', 'Viagens', 780, 'EUR', -30], ['Hotel Copacabana', 'Moradia', 2100, 'BRL', -4], ['Churrascaria', 'Restaurantes', 240, 'BRL', -3], ['Pão de Açúcar', 'Lazer', 190, 'BRL', -2], ['Uber', 'Transporte', 64, 'BRL', -1]]) {
-    definirValorConta(add('lancamentos', { tipo: 'despesa', descricao: d, valor: v, moeda: m, data: emDias(n), categoria: c(cat), nota: '', recorrente: null, competencia: null, conta: cartao._id, viagem: rio._id }));
+  // € 800 separados da conta corrente para gastar no Rio (em reais, pelo câmbio do dia)
+  db.reservasViagem.push({ _id: novoId(), viagem: rio._id, conta: giro._id, valor: 800, valorViagem: round2(converter(800, 'EUR', 'BRL')), data: emDias(-6), nota: '' });
+  for (const [d, cat, v, m, n, reserva] of [['Voo Frankfurt–Rio', 'Viagens', 780, 'EUR', -30], ['Hotel Copacabana', 'Moradia', 2100, 'BRL', -4], ['Churrascaria', 'Restaurantes', 240, 'BRL', -3, true], ['Pão de Açúcar', 'Lazer', 190, 'BRL', -2, true], ['Uber', 'Transporte', 64, 'BRL', -1, true]]) {
+    definirValorConta(add('lancamentos', { tipo: 'despesa', descricao: d, valor: v, moeda: m, data: emDias(n), categoria: c(cat), nota: '', recorrente: null, competencia: null, conta: reserva ? null : cartao._id, viagem: rio._id, reservaViagem: !!reserva }));
   }
   // faturas já vencidas ficam pagas (pagamento no dia do vencimento)
   gerarRecorrentes();
@@ -106,7 +108,7 @@ function semear() {
   add('contribuicoes', { meta: casa._id, valor: 4000, data: dia(-8, 1), pessoa: 'Ana', nota: 'Saldo inicial' });
   for (let n = -7; n <= 0; n++) {
     if (n === 0 && hojeDia < 5) continue;
-    add('contribuicoes', { meta: casa._id, valor: 600, data: dia(n, 5), pessoa: 'Eu', nota: '' });
+    add('contribuicoes', { meta: casa._id, valor: 600, data: dia(n, 5), pessoa: 'Eu', nota: '', conta: n >= -2 ? db.carteira[0]._id : null, valorConta: null });
     add('contribuicoes', { meta: casa._id, valor: n === -3 ? 0 : 450, data: dia(n, 6), pessoa: 'Ana', nota: '' });
   }
   db.contribuicoes = db.contribuicoes.filter((c) => c.valor !== 0);
@@ -235,12 +237,26 @@ function proximaData(r) {
 }
 
 // ---------- contas, cartões, viagens ----------
-const carteira = () => ({ contas: db.carteira, lancamentos: db.lancamentos.filter((l) => l.conta || l.contaDestino), contasRend: db.contas, movsRend: db.movimentos });
+const separados = () => movimentosSeparados({ contribuicoes: db.contribuicoes, metas: db.metas, reservasViagem: db.reservasViagem, viagens: db.viagens, gastosReserva: db.lancamentos.filter((l) => l.reservaViagem), contas: db.carteira });
+const carteira = () => {
+  const sep = separados();
+  return { contas: db.carteira, lancamentos: [...db.lancamentos.filter((l) => l.conta || l.contaDestino), ...sep.lancamentos], reservas: sep.reservas, contasRend: db.contas, movsRend: db.movimentos };
+};
+const ORIGENS = ['corrente', 'dinheiro', 'investimento'];
+const contaDeOrigem = (id) => {
+  if (!id) return null;
+  const c = db.carteira.find((x) => x._id === id);
+  if (!c || !ORIGENS.includes(c.tipo)) throw new Erro(400, 'Escolha uma conta corrente, dinheiro ou investimento', 'conta_origem_invalida');
+  return c;
+};
+const naMoedaDaConta = (conta, valor, moeda, informado) => (!conta || conta.moeda === moeda ? null
+  : informado != null && informado !== '' ? Math.sign(valor) * Math.abs(round2(informado)) : round2(converter(valor, moeda, conta.moeda)));
 const convDia = (v, de, para) => converter(v, de, para);
 /** Compra em moeda diferente da conta: guarda o valor cobrado na moeda da conta */
 function definirValorConta(d) {
-  if (d.tipo === 'transferencia' || !d.conta) { d.valorConta = null; return d; }
-  const mc = db.carteira.find((c) => c._id === d.conta)?.moeda;
+  if (d.reservaViagem) d.conta = null;
+  if (d.tipo === 'transferencia' || (!d.conta && !(d.reservaViagem && d.viagem))) { d.valorConta = null; return d; }
+  const mc = d.reservaViagem ? db.viagens.find((v) => v._id === d.viagem)?.moeda : db.carteira.find((c) => c._id === d.conta)?.moeda;
   if (!mc || mc === d.moeda) d.valorConta = null;
   else if (d.valorConta == null) d.valorConta = round2(converter(d.valor, d.moeda, mc));
   return d;
@@ -276,12 +292,12 @@ function rotaCarteira(M, id, sub, q, body) {
     return Object.assign(c, d);
   }
   if (!sub && M === 'DELETE') {
-    const n = db.lancamentos.filter((l) => l.conta === id || l.contaDestino === id).length;
+    const n = db.lancamentos.filter((l) => l.conta === id || l.contaDestino === id).length + db.contribuicoes.filter((c) => c.conta === id).length + db.reservasViagem.filter((r) => r.conta === id).length;
     if (n) throw new Erro(409, 'A conta tem lançamentos', 'conta_com_lancamentos', { n });
     for (const r of db.recorrentes) if (r.conta === id) r.conta = null;
     db.carteira = db.carteira.filter((x) => x._id !== id); return null;
   }
-  const lancs = db.lancamentos.filter((l) => l.conta === id || l.contaDestino === id);
+  const lancs = [...db.lancamentos, ...separados().lancamentos].filter((l) => l.conta === id || l.contaDestino === id);
   const dataDe = (v) => (v ? `${String(v).slice(0, 10)}T12:00:00.000Z` : agoraISO());
   if (sub === 'ajuste') {
     const data = dataDe(body?.data);
@@ -306,21 +322,31 @@ function rotaCarteira(M, id, sub, q, body) {
   throw new Erro(404, 'Rota não encontrada');
 }
 
-function rotaViagens(M, id, body) {
-  const comResumo = (v) => ({ ...v, ...resumoViagem(v, db.lancamentos, convDia, db.categorias) });
+function rotaViagens(M, id, body, sub) {
+  const comResumo = (v) => ({ ...v, ...resumoViagem(v, db.lancamentos, convDia, db.categorias, new Date(), db.reservasViagem) });
+  if (id && sub === 'reservas' && M === 'POST') {
+    const v = achar('viagens', id);
+    const conta = contaDeOrigem(body.conta);
+    if (!conta) throw new Erro(400, 'Escolha a conta', 'escolha_origem');
+    const valor = round2(Number(body.valor));
+    if (!valor) throw new Erro(400, 'Informe um valor', 'dados_invalidos');
+    const naConta = naMoedaDaConta(conta, valor, v.moeda, body.valorConta);
+    const r = { _id: novoId(), viagem: id, conta: conta._id, valor: naConta ?? valor, valorViagem: naConta == null ? null : valor, data: paraData(body.data) || agoraISO(), nota: body.nota || '' };
+    db.reservasViagem.push(r); return r;
+  }
   if (!id && M === 'GET') return [...db.viagens].sort((x, y) => (x.arquivada - y.arquivada) || String(y.inicio || '').localeCompare(String(x.inicio || ''))).map(comResumo);
   if (!id && M === 'POST') { const d = { _id: novoId(), icone: '✈️', cor: '#e0672b', moeda: 'EUR', orcamento: 0, inicio: null, fim: null, arquivada: false, ...normalizar('viagens', body), createdAt: agoraISO() }; db.viagens.push(d); return d; }
   const v = achar('viagens', id);
-  if (M === 'GET') return { ...comResumo(v), lancamentos: db.lancamentos.filter((l) => l.viagem === id).sort((x, y) => (y.data > x.data ? 1 : -1)) };
+  if (M === 'GET') return { ...comResumo(v), lancamentos: db.lancamentos.filter((l) => l.viagem === id).sort((x, y) => (y.data > x.data ? 1 : -1)), reservas: db.reservasViagem.filter((r) => r.viagem === id).sort((x, y) => (y.data > x.data ? 1 : -1)) };
   if (M === 'PUT') return Object.assign(v, normalizar('viagens', body));
-  if (M === 'DELETE') { for (const l of db.lancamentos) if (l.viagem === id) l.viagem = null; db.viagens = db.viagens.filter((x) => x._id !== id); return null; }
+  if (M === 'DELETE') { for (const l of db.lancamentos) if (l.viagem === id) Object.assign(l, { viagem: null, reservaViagem: false, valorConta: null }); db.reservasViagem = db.reservasViagem.filter((r) => r.viagem !== id); db.viagens = db.viagens.filter((x) => x._id !== id); return null; }
   throw new Erro(404, 'Rota não encontrada');
 }
 
 // ---------- roteador ----------
 const CAMPOS = {
   categorias: ['nome', 'tipo', 'cor', 'icone', 'orcamentoMensal', 'moeda', 'alertaPct', 'dedutivel'],
-  lancamentos: ['tipo', 'descricao', 'valor', 'moeda', 'data', 'categoria', 'nota', 'conta', 'contaDestino', 'valorDestino', 'valorConta', 'fatura', 'ajuste', 'viagem'],
+  lancamentos: ['tipo', 'descricao', 'valor', 'moeda', 'data', 'categoria', 'nota', 'conta', 'contaDestino', 'valorDestino', 'valorConta', 'fatura', 'ajuste', 'viagem', 'reservaViagem'],
   recorrentes: ['tipo', 'descricao', 'valor', 'moeda', 'categoria', 'conta', 'frequencia', 'diaDoMes', 'inicio', 'fim', 'ativo'],
   carteira: ['nome', 'tipo', 'instituicao', 'moeda', 'saldoInicial', 'dataInicio', 'cor', 'arquivada', 'limite', 'diaFechamento', 'diaVencimento', 'contaPagamento'],
   viagens: ['nome', 'icone', 'cor', 'moeda', 'orcamento', 'inicio', 'fim', 'arquivada'],
@@ -367,7 +393,7 @@ function rotear(method, path, q, body) {
     if (M === 'GET') {
       gerarRecorrentes();
       const mes = q.get('mes'), conta = q.get('conta'), viagem = q.get('viagem'), cat = q.get('categoria');
-      return db.lancamentos.filter((l) => (!mes || doMes(l.data, mes)) && (!conta || l.conta === conta || l.contaDestino === conta) && (!viagem || l.viagem === viagem) && (!cat || l.categoria === cat)).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
+      return [...db.lancamentos, ...(conta ? separados().lancamentos : [])].filter((l) => (!mes || doMes(l.data, mes)) && (!conta || l.conta === conta || l.contaDestino === conta) && (!viagem || l.viagem === viagem) && (!cat || l.categoria === cat)).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
     }
     if (M === 'POST') {
       const dados = definirValorConta(normalizar(a, body));
@@ -385,7 +411,7 @@ function rotear(method, path, q, body) {
   }
 
   if (a === 'carteira') return rotaCarteira(M, id, sub, q, body);
-  if (a === 'viagens') return rotaViagens(M, id, body);
+  if (a === 'viagens') return rotaViagens(M, id, body, sub);
   if (a === 'relatorio') {
     gerarRecorrentes(); sincronizarTodas();
     const ano = /^\d{4}$/.test(q.get('ano') || '') ? Number(q.get('ano')) : new Date().getUTCFullYear();
@@ -465,10 +491,12 @@ function rotear(method, path, q, body) {
       const valor = round2(body.valor);
       const guardado = db.contribuicoes.filter((c) => c.meta === id).reduce((s, c) => s + c.valor, 0);
       if (valor < 0 && -valor > guardado + 0.001) throw new Erro(400, 'Retirada maior que o guardado', 'retirada_maior_guardado', { saldo: round2(guardado), moeda: m.moeda });
-      db.contribuicoes.push({ _id: novoId(), meta: id, valor, data: paraData(body.data) || agoraISO(), pessoa: body.pessoa || '', nota: body.nota || '' });
+      const conta = contaDeOrigem(body.conta || null);
+      db.contribuicoes.push({ _id: novoId(), meta: id, valor, data: paraData(body.data) || agoraISO(), pessoa: body.pessoa || '', nota: body.nota || '', conta: conta?._id || null, valorConta: naMoedaDaConta(conta, valor, m.moeda, body.valorConta) });
       return metaComMetricas(m);
     }
   }
+  if (a === 'reservas-viagem' && M === 'DELETE') { db.reservasViagem = db.reservasViagem.filter((r) => r._id !== id); return null; }
   if (a === 'contribuicoes' && M === 'DELETE') { db.contribuicoes = db.contribuicoes.filter((c) => c._id !== id); return null; }
 
   if (a === 'regras' && M === 'GET') return db.regras;
