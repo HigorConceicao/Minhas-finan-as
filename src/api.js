@@ -1,3 +1,6 @@
+import { traduzir } from './i18n.js';
+import { dinheiro } from './fmt.js';
+
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const gravar = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
 
@@ -7,7 +10,19 @@ export const sessao = {
 };
 
 export class ErroApi extends Error {
-  constructor(status, mensagem) { super(mensagem); this.status = status; }
+  constructor(status, mensagem, codigo) { super(mensagem); this.status = status; this.codigo = codigo; }
+}
+
+/** Mensagem no idioma do app a partir do código enviado pelo servidor */
+function mensagem(dados, status) {
+  const cod = dados?.codigo;
+  if (cod) {
+    const vars = { ...(dados.dados || {}) };
+    if (vars.saldo != null) vars.saldo = dinheiro(vars.saldo, vars.moeda || 'EUR');
+    const txt = traduzir(`erro.${cod}`, vars);
+    if (txt && txt !== `erro.${cod}`) return txt;
+  }
+  return dados?.erro || traduzir('erro.erro_interno') || `Erro ${status}`;
 }
 
 export async function api(caminho, { method = 'GET', body } = {}) {
@@ -20,7 +35,7 @@ export async function api(caminho, { method = 'GET', body } = {}) {
   }
   if (r.status === 204) return null;
   const dados = await r.json().catch(() => null);
-  if (!r.ok) throw new ErroApi(r.status, dados?.erro || `Erro ${r.status}`);
+  if (!r.ok) throw new ErroApi(r.status, mensagem(dados, r.status), dados?.codigo);
   return dados;
 }
 

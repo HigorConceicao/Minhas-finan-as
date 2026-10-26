@@ -71,3 +71,28 @@ test('série mensal soma corretamente sem movimentos', () => {
   assert.equal(s.length, 2);
   assert.equal(s[1].fechamento, 500);
 });
+
+import { rendimentosAutomaticos } from '../finance.js';
+
+test('rendimento automático: só meses encerrados, desde que foi ligado, em sequência', () => {
+  const conta = { _id: 'c1', saldoInicial: 100000, dataInicio: d('2026-06-01'), modo: 'mensal', taxa: 1,
+    rendimentoAutomatico: true, autoDesde: d('2026-08-15') };
+  const novos = rendimentosAutomaticos(conta, [], d('2026-10-18'));
+  // jun e jul são antes de ligar; ago e set encerrados; out ainda não terminou
+  assert.deepEqual(novos.map((m) => m.data.toISOString().slice(0, 7)), ['2026-08', '2026-09']);
+  assert.equal(novos[0].valor, 1000);
+  assert.equal(novos[1].valor, 1010); // rende sobre o saldo já com os juros de agosto
+  assert.ok(novos.every((m) => m.automatico));
+});
+
+test('rendimento automático respeita meses já lançados, apagados e o modo manual', () => {
+  const base = { _id: 'c1', saldoInicial: 1000, dataInicio: d('2026-08-01'), modo: 'mensal', taxa: 1, rendimentoAutomatico: true, autoDesde: d('2026-08-01') };
+  const ja = [{ tipo: 'rendimento', valor: 5, data: d('2026-08-31') }];
+  assert.deepEqual(rendimentosAutomaticos(base, ja, d('2026-09-30')).map((m) => m.valor), [10.05]);
+  assert.equal(rendimentosAutomaticos({ ...base, rendimentoIgnorado: ['2026-08', '2026-09'] }, [], d('2026-10-01')).length, 0);
+  assert.equal(rendimentosAutomaticos({ ...base, modo: 'manual' }, [], d('2026-10-01')).length, 0);
+  assert.equal(rendimentosAutomaticos({ ...base, rendimentoAutomatico: false }, [], d('2026-10-01')).length, 0);
+  // no último dia (depois do meio-dia UTC) o mês já conta
+  assert.equal(rendimentosAutomaticos(base, [], new Date('2026-08-31T13:00:00Z')).length, 1);
+  assert.equal(rendimentosAutomaticos(base, [], new Date('2026-08-30T23:00:00Z')).length, 0);
+});

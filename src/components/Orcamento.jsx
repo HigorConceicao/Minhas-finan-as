@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
 import { del, post, put } from '../api.js';
-import { dinheiro, lerNumero, pct } from '../fmt.js';
-import { Barra, BotaoConfirmar, Campo, Carregando, Modal, SeletorMes, useAviso } from './ui.jsx';
+import { dinheiro, lerNumero, paraCampo, pct } from '../fmt.js';
+import { useT } from '../i18n.js';
+import { Barra, BotaoConfirmar, Campo, Carregando, IconeCategoria, Modal, Segmentado, SeletorMes, useAviso } from './ui.jsx';
+import Icone from './Icones.jsx';
 
-const ESTADO = {
-  ok: { t: 'Dentro', c: 'bg-verde-claro text-verde' },
-  alerta: { t: 'Atenção', c: 'bg-ambar-claro text-ambar' },
-  estourado: { t: 'Estourado', c: 'bg-vermelho-claro text-vermelho' },
-};
+const ESTADO = { ok: 'bg-marca-suave text-marca', alerta: 'bg-aviso-suave text-aviso', estourado: 'bg-neg-suave text-neg' };
 
 export default function Orcamento({ mes, setMes, base, resumo, categorias, recarregar }) {
+  const t = useT();
   const avisar = useAviso();
   const [form, setForm] = useState(null);
   if (!resumo) return <Carregando />;
@@ -19,153 +18,152 @@ export default function Orcamento({ mes, setMes, base, resumo, categorias, recar
   const restante = resumo.totalOrcado - resumo.gastoOrcado;
   const receitas = categorias.filter((c) => c.tipo === 'receita');
   const abrir = (id) => setForm(categorias.find((c) => c._id === id) || {});
+  const usoTotal = resumo.totalOrcado ? resumo.gastoOrcado / resumo.totalOrcado : 0;
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SeletorMes mes={mes} aoMudar={setMes} />
-        <button className="btn-secundario" onClick={() => setForm({})}>+ Categoria</button>
+        <button className="btn-secundario" onClick={() => setForm({})}><Icone nome="mais" className="h-4 w-4" forte />{t('orc.categoria').replace('+ ', '')}</button>
       </div>
 
-      <section className="folha p-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="rotulo">Orçamento do mês</p>
-            <p className="num mt-1 text-2xl">{dinheiro(resumo.gastoOrcado, base)} <span className="text-base text-tinta-fraca">de {dinheiro(resumo.totalOrcado, base)}</span></p>
-          </div>
-          <p className={`num text-sm ${restante >= 0 ? 'text-verde' : 'text-vermelho'}`}>
-            {restante >= 0 ? `Restam ${dinheiro(restante, base)}` : `Excedido em ${dinheiro(-restante, base)}`}
+      <section className="cartao p-5">
+        <p className="rotulo">{t('orc.doMes')}</p>
+        <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
+          <p className="num text-3xl font-extrabold tracking-tight">{dinheiro(resumo.gastoOrcado, base)} <span className="text-base font-semibold text-texto-3">{t('orc.de')} {dinheiro(resumo.totalOrcado, base)}</span></p>
+          <p className={`num text-sm font-bold ${restante >= 0 ? 'text-pos' : 'text-neg'}`}>
+            {restante >= 0 ? t('orc.restam', { v: dinheiro(restante, base) }) : t('orc.excedido', { v: dinheiro(-restante, base) })}
           </p>
         </div>
-        <div className="mt-3">
-          <Barra valor={resumo.gastoOrcado} maximo={resumo.totalOrcado || 1}
-            estado={resumo.gastoOrcado > resumo.totalOrcado ? 'estourado' : resumo.gastoOrcado / (resumo.totalOrcado || 1) > 0.8 ? 'alerta' : 'ok'} />
+        <div className="mt-4">
+          <Barra valor={resumo.gastoOrcado} maximo={resumo.totalOrcado || 1} estado={usoTotal > 1 ? 'estourado' : usoTotal > 0.8 ? 'alerta' : 'ok'} />
         </div>
         {resumo.fracaoDoMes > 0 && resumo.fracaoDoMes < 1 && (
-          <p className="mt-2 text-xs text-tinta-fraca">{pct(resumo.fracaoDoMes * 100, 0)} do mês já passou · a linha tracejada mostra onde cada categoria deve terminar no ritmo atual.</p>
+          <p className="mt-3 text-xs text-texto-3">{t('orc.mesPassou', { p: pct(resumo.fracaoDoMes * 100, 0) })}</p>
         )}
       </section>
 
       {comLimite.length > 0 && (
-        <section className="folha divide-y divide-linha/70">
+        <ul className="cartao divide-y divide-linha overflow-hidden">
           {comLimite.map((o) => (
-            <button key={o.categoria} className="block w-full px-4 py-3 text-left hover:bg-papel-escuro/30" onClick={() => abrir(o.categoria)}>
-              <div className="mb-1.5 flex items-center gap-2">
-                <span>{o.icone}</span>
-                <span className="flex-1 text-sm font-medium">{o.nome}</span>
-                <span className={`chip ${ESTADO[o.estado].c}`}>{ESTADO[o.estado].t}</span>
-              </div>
-              <Barra valor={o.gasto} maximo={o.limite} estado={o.estado} ritmo={o.ritmo} />
-              <div className="num mt-1.5 flex justify-between text-xs text-tinta-suave">
-                <span>{dinheiro(o.gasto, base)} de {dinheiro(o.limite, base)} ({pct(o.pct, 0)})</span>
-                <span className={o.restante < 0 ? 'text-vermelho' : ''}>{o.restante < 0 ? `+${dinheiro(-o.restante, base)}` : `resta ${dinheiro(o.restante, base)}`}</span>
-              </div>
-              {o.ritmo != null && o.ritmo > o.limite && o.estado !== 'estourado' && resumo.fracaoDoMes < 1 && (
-                <p className="mt-1 text-xs text-ambar">No ritmo atual termina o mês em {dinheiro(o.ritmo, base)}.</p>
-              )}
-            </button>
+            <li key={o.categoria}>
+              <button className="flex w-full items-start gap-3 px-4 py-4 text-left hover:bg-sutil/60" onClick={() => abrir(o.categoria)}>
+                <IconeCategoria cor={o.cor} icone={o.icone} />
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-bold">{o.nome}</span>
+                    <span className={`chip ${ESTADO[o.estado]}`}>{t(`orc.estado.${o.estado}`)}</span>
+                  </div>
+                  <Barra valor={o.gasto} maximo={o.limite} estado={o.estado} ritmo={o.ritmo} />
+                  <div className="num mt-2 flex justify-between gap-2 text-xs text-texto-2">
+                    <span>{dinheiro(o.gasto, base)} {t('orc.de')} {dinheiro(o.limite, base)}</span>
+                    <span className={o.restante < 0 ? 'font-semibold text-neg' : ''}>{o.restante < 0 ? `+${dinheiro(-o.restante, base)}` : t('orc.resta', { v: dinheiro(o.restante, base) })}</span>
+                  </div>
+                  {o.ritmo != null && o.ritmo > o.limite && o.estado !== 'estourado' && resumo.fracaoDoMes < 1 && (
+                    <p className="mt-1 text-xs font-semibold text-aviso">{t('orc.ritmo', { v: dinheiro(o.ritmo, base) })}</p>
+                  )}
+                </div>
+              </button>
+            </li>
           ))}
-        </section>
+        </ul>
       )}
 
       <section>
-        <h3 className="mb-2 text-lg">Sem orçamento definido</h3>
-        <div className="folha divide-y divide-linha/70">
+        <h3 className="mb-2 px-1 text-base">{t('orc.semOrcamento')}</h3>
+        <ul className="cartao divide-y divide-linha overflow-hidden">
           {semLimite.map((o) => (
-            <button key={o.categoria} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-papel-escuro/30" onClick={() => abrir(o.categoria)}>
-              <span>{o.icone}</span><span className="flex-1">{o.nome}</span>
-              <span className="num text-tinta-suave">{dinheiro(o.gasto, base)}</span>
-              <span className="text-xs text-couro">definir →</span>
-            </button>
+            <li key={o.categoria}>
+              <button className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-sutil/60" onClick={() => abrir(o.categoria)}>
+                <IconeCategoria cor={o.cor} icone={o.icone} tamanho="h-8 w-8 text-sm" />
+                <span className="flex-1 font-semibold">{o.nome}</span>
+                <span className="num text-texto-2">{dinheiro(o.gasto, base)}</span>
+                <span className="text-xs font-semibold text-marca">{t('orc.definir')}</span>
+              </button>
+            </li>
           ))}
           {resumo.semCategoria > 0 && (
-            <p className="flex items-center gap-2 px-4 py-2.5 text-sm text-tinta-suave"><span>•</span><span className="flex-1">Sem categoria</span><span className="num">{dinheiro(resumo.semCategoria, base)}</span></p>
+            <li className="flex items-center gap-3 px-4 py-3 text-sm text-texto-2"><IconeCategoria tamanho="h-8 w-8 text-sm" /><span className="flex-1">{t('comum.semCategoria')}</span><span className="num">{dinheiro(resumo.semCategoria, base)}</span></li>
           )}
-          {!semLimite.length && !resumo.semCategoria && <p className="px-4 py-3 text-sm text-tinta-suave">Todas as categorias de despesa têm orçamento. 👏</p>}
-        </div>
+          {!semLimite.length && !resumo.semCategoria && <li className="px-4 py-3 text-sm text-texto-2">{t('orc.todasComOrcamento')}</li>}
+        </ul>
       </section>
 
       {receitas.length > 0 && (
         <section>
-          <h3 className="mb-2 text-lg">Categorias de receita</h3>
+          <h3 className="mb-2 px-1 text-base">{t('orc.catReceita')}</h3>
           <div className="flex flex-wrap gap-2">
             {receitas.map((c) => (
-              <button key={c._id} className="chip border border-linha bg-papel-claro px-3 py-1 text-sm" onClick={() => setForm(c)}>{c.icone} {c.nome}</button>
+              <button key={c._id} className="chip bg-cartao px-3 py-2 text-sm shadow-cartao" onClick={() => setForm(c)}>{c.icone} {c.nome}</button>
             ))}
           </div>
         </section>
       )}
 
       <FormCategoria aberto={form !== null} cat={form} base={base} aoFechar={() => setForm(null)}
-        aoSalvar={async () => { setForm(null); await recarregar(); avisar('Categoria salva'); }}
-        aoApagar={async (id) => { await del(`/categorias/${id}`); setForm(null); await recarregar(); avisar('Categoria apagada'); }} />
+        aoSalvar={async () => { setForm(null); await recarregar(); avisar(t('orc.salva')); }}
+        aoApagar={async (id) => { await del(`/categorias/${id}`); setForm(null); await recarregar(); avisar(t('orc.apagada')); }} />
     </div>
   );
 }
 
-const CORES = ['#8b5e3c', '#5f7a4a', '#b5651d', '#4a6378', '#7a4a5f', '#9c7a2c', '#3f7a78', '#6b5b8a', '#a33a2c', '#2f6b4f', '#7d7468'];
+const CORES = ['#2952eb', '#0d8c54', '#e0672b', '#8b5cf6', '#d63030', '#0ea5a4', '#c47a0a', '#db2777', '#475569', '#65a30d', '#8a92a3'];
 
 function FormCategoria({ aberto, cat, base, aoFechar, aoSalvar, aoApagar }) {
+  const t = useT();
   const avisar = useAviso();
   const novo = !cat?._id;
   const [f, setF] = useState({});
   useEffect(() => {
     if (!aberto) return;
     setF(cat?._id
-      ? { ...cat, orcamentoMensal: cat.orcamentoMensal ? String(cat.orcamentoMensal).replace('.', ',') : '' }
+      ? { ...cat, orcamentoMensal: cat.orcamentoMensal ? paraCampo(cat.orcamentoMensal) : '' }
       : { nome: '', tipo: 'despesa', icone: '•', cor: CORES[0], orcamentoMensal: '', moeda: base, alertaPct: 80 });
   }, [aberto, cat, base]);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
 
   const salvar = async (e) => {
     e.preventDefault();
-    if (!f.nome?.trim()) return avisar('Dê um nome', 'erro');
+    if (!f.nome?.trim()) return avisar(t('orc.deNome'), 'erro');
     const orc = f.orcamentoMensal === '' ? 0 : lerNumero(f.orcamentoMensal);
-    if (!(orc >= 0)) return avisar('Orçamento inválido', 'erro');
+    if (!(orc >= 0)) return avisar(t('orc.invalido'), 'erro');
     const corpo = { nome: f.nome, tipo: f.tipo, icone: f.icone || '•', cor: f.cor, orcamentoMensal: orc, moeda: f.moeda, alertaPct: Number(f.alertaPct) || 80 };
     try { novo ? await post('/categorias', corpo) : await put(`/categorias/${cat._id}`, corpo); aoSalvar(); }
     catch (err) { avisar(err.message, 'erro'); }
   };
 
   return (
-    <Modal titulo={novo ? 'Nova categoria' : f.nome || 'Categoria'} aberto={aberto} aoFechar={aoFechar}>
-      <form onSubmit={salvar} className="space-y-3">
+    <Modal titulo={novo ? t('orc.novaCategoria') : f.nome || t('comum.categoria')} aberto={aberto} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="space-y-4">
         <div className="grid grid-cols-[4.5rem_1fr] gap-3">
-          <Campo rotulo="Ícone"><input className="campo text-center" maxLength={4} value={f.icone || ''} onChange={set('icone')} /></Campo>
-          <Campo rotulo="Nome"><input className="campo" value={f.nome || ''} onChange={set('nome')} /></Campo>
+          <Campo rotulo={t('orc.icone')}><input id="cat-icone" className="campo text-center" maxLength={4} value={f.icone || ''} onChange={set('icone')} /></Campo>
+          <Campo rotulo={t('orc.nome')}><input id="cat-nome" className="campo" value={f.nome || ''} onChange={set('nome')} /></Campo>
         </div>
-        {novo && (
-          <div className="grid grid-cols-2 gap-2">
-            {[['despesa', 'Despesa'], ['receita', 'Receita']].map(([k, t]) => (
-              <button type="button" key={k} onClick={() => setF((x) => ({ ...x, tipo: k }))}
-                className={`rounded-lg border px-2 py-2 text-sm ${f.tipo === k ? 'border-couro bg-couro text-papel-claro' : 'border-linha bg-white/60'}`}>{t}</button>
-            ))}
-          </div>
-        )}
-        <Campo rotulo="Cor">
+        {novo && <Segmentado opcoes={[['despesa', t('comum.despesa')], ['receita', t('comum.receita')]]} valor={f.tipo} aoMudar={(k) => setF((x) => ({ ...x, tipo: k }))} />}
+        <Campo rotulo={t('orc.cor')}>
           <div className="flex flex-wrap gap-2">
             {CORES.map((c) => (
-              <button type="button" key={c} onClick={() => setF((x) => ({ ...x, cor: c }))} aria-label={c}
-                className={`h-7 w-7 rounded-full ring-offset-2 ring-offset-papel-claro ${f.cor === c ? 'ring-2 ring-tinta' : ''}`} style={{ background: c }} />
+              <button type="button" key={c} onClick={() => setF((x) => ({ ...x, cor: c }))} aria-label={c} aria-pressed={f.cor === c}
+                className={`h-8 w-8 rounded-full ring-offset-2 ring-offset-cartao ${f.cor === c ? 'ring-2 ring-texto' : ''}`} style={{ background: c }} />
             ))}
           </div>
         </Campo>
         {f.tipo === 'despesa' && (
           <>
             <div className="grid grid-cols-[1fr_auto] gap-3">
-              <Campo rotulo="Orçamento mensal" dica="Deixe vazio para não limitar."><input className="campo num" inputMode="decimal" value={f.orcamentoMensal ?? ''} onChange={set('orcamentoMensal')} placeholder="0,00" /></Campo>
-              <Campo rotulo="Moeda"><select className="campo" value={f.moeda} onChange={set('moeda')}><option>EUR</option><option>BRL</option><option>USD</option></select></Campo>
+              <Campo rotulo={t('orc.orcamentoMensal')} dica={t('orc.semLimite')}><input id="cat-orc" className="campo num" inputMode="decimal" value={f.orcamentoMensal ?? ''} onChange={set('orcamentoMensal')} placeholder={t('comum.zero')} /></Campo>
+              <Campo rotulo={t('comum.moeda')}><select id="cat-moeda" className="campo" value={f.moeda} onChange={set('moeda')}><option>EUR</option><option>BRL</option><option>USD</option></select></Campo>
             </div>
-            <Campo rotulo={`Avisar ao atingir ${f.alertaPct}%`}>
-              <input type="range" min="50" max="100" step="5" value={f.alertaPct || 80} onChange={set('alertaPct')} className="w-full accent-couro" />
+            <Campo rotulo={t('orc.avisarEm', { p: f.alertaPct })}>
+              <input id="cat-alerta" type="range" min="50" max="100" step="5" value={f.alertaPct || 80} onChange={set('alertaPct')} className="w-full accent-[rgb(var(--marca))]" />
             </Campo>
           </>
         )}
         <div className="flex flex-wrap justify-between gap-2 pt-2">
-          {!novo ? <BotaoConfirmar texto="Apagar? Lançamentos ficam sem categoria" aoConfirmar={() => aoApagar(cat._id)}>Apagar</BotaoConfirmar> : <span />}
+          {!novo ? <BotaoConfirmar texto={t('orc.apagarCat')} aoConfirmar={() => aoApagar(cat._id)}>{t('comum.apagar')}</BotaoConfirmar> : <span />}
           <div className="flex gap-2">
-            <button type="button" className="btn-secundario" onClick={aoFechar}>Cancelar</button>
-            <button className="btn-primario">Salvar</button>
+            <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
+            <button className="btn-primario">{t('comum.salvar')}</button>
           </div>
         </div>
       </form>

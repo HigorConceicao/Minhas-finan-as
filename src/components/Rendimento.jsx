@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { del, get, post, put } from '../api.js';
-import { dataCompleta, dinheiro, duracao, hojeISO, lerNumero, mesAtual, mesCurto, mesLongo, paraInput, pct, somarMes } from '../fmt.js';
-import { BotaoConfirmar, Campo, Carregando, Estatistica, Modal, Vazio, useAviso } from './ui.jsx';
+import {
+  dataCompleta, dataCurta, dinheiro, duracao, hojeISO, lerNumero, mesAtual, mesCurto, mesLongo, paraCampo, paraInput, pct, somarMes, ultimoDia,
+} from '../fmt.js';
+import { useT } from '../i18n.js';
+import { BotaoConfirmar, Campo, Carregando, Estatistica, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
 import { BarrasJurosSaidas, LinhaSaldo } from './Graficos.jsx';
+import Icone from './Icones.jsx';
 
-const TIPOS = {
-  rendimento: { nome: 'Rendimento', sinal: '+', cor: 'text-verde', chip: 'bg-verde-claro text-verde' },
-  aporte: { nome: 'Aporte', sinal: '+', cor: 'text-verde', chip: 'bg-verde-claro text-verde' },
-  resgate: { nome: 'Resgate', sinal: '−', cor: 'text-vermelho', chip: 'bg-vermelho-claro text-vermelho' },
-  imposto: { nome: 'Imposto', sinal: '−', cor: 'text-vermelho', chip: 'bg-vermelho-claro text-vermelho' },
-  taxa: { nome: 'Taxa', sinal: '−', cor: 'text-vermelho', chip: 'bg-vermelho-claro text-vermelho' },
-};
+const SAIDAS = ['resgate', 'imposto', 'taxa'];
+const CHIP = { rendimento: 'bg-pos-suave text-pos', aporte: 'bg-pos-suave text-pos', resgate: 'bg-neg-suave text-neg', imposto: 'bg-neg-suave text-neg', taxa: 'bg-neg-suave text-neg' };
 
 export default function Rendimento() {
+  const t = useT();
   const avisar = useAviso();
   const [contas, setContas] = useState(null);
   const [selecionada, setSelecionada] = useState(null);
   const [met, setMet] = useState(null);
   const [movs, setMovs] = useState([]);
-  const [formConta, setFormConta] = useState(null); // null | {} | conta
+  const [formConta, setFormConta] = useState(null);
   const [formMov, setFormMov] = useState(null);
   const [modalRend, setModalRend] = useState(false);
   const [aba, setAba] = useState('meses');
@@ -28,29 +28,25 @@ export default function Rendimento() {
     setContas(cs);
     setSelecionada((s) => (cs.find((c) => c._id === s) ? s : cs[0]?._id || null));
   }, []);
-
   const carregarConta = useCallback(async (id) => {
     if (!id) { setMet(null); setMovs([]); return; }
-    const [m, mv] = await Promise.all([get(`/contas/${id}/metricas`), get(`/contas/${id}/movimentos`)]);
-    setMet(m); setMovs(mv);
+    const m = await get(`/contas/${id}/metricas`); // sincroniza o automático antes de listar
+    setMet(m);
+    setMovs(await get(`/contas/${id}/movimentos`));
   }, []);
 
   useEffect(() => { carregarContas().catch((e) => avisar(e.message, 'erro')); }, [carregarContas, avisar]);
   useEffect(() => { carregarConta(selecionada).catch((e) => avisar(e.message, 'erro')); }, [selecionada, carregarConta, avisar]);
-
   const recarregar = async () => { await Promise.all([carregarContas(), carregarConta(selecionada)]); };
 
   if (!contas) return <Carregando />;
   if (!contas.length) {
     return (
       <>
-        <Vazio
-          titulo="Nenhuma conta de rendimento"
-          texto="Cadastre a conta com o saldo inicial e a taxa. O app calcula os juros de cada mês, registra as saídas e mostra quanto você pode retirar sem reduzir o montante."
-          acao={<button className="btn-primario" onClick={() => setFormConta({})}>Cadastrar conta</button>}
-        />
+        <Vazio icone="rendimento" titulo={t('rend.nenhuma')} texto={t('rend.vazio')}
+          acao={<button className="btn-primario" onClick={() => setFormConta({})}>{t('rend.cadastrar')}</button>} />
         <FormConta aberto={formConta !== null} conta={formConta} aoFechar={() => setFormConta(null)}
-          aoSalvar={async (c) => { setFormConta(null); await carregarContas(); setSelecionada(c._id); avisar('Conta criada'); }} />
+          aoSalvar={async (c) => { setFormConta(null); await carregarContas(); setSelecionada(c._id); avisar(t('rend.criada')); }} />
       </>
     );
   }
@@ -58,121 +54,112 @@ export default function Rendimento() {
   const conta = met?.conta;
   const moeda = conta?.moeda || 'BRL';
   const m = met;
+  const automatico = conta?.rendimentoAutomatico && conta?.modo !== 'manual';
 
   return (
     <div className="space-y-5">
-      {/* seletor de contas */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
         {contas.map((c) => (
-          <button key={c._id} onClick={() => setSelecionada(c._id)}
-            className={`rounded-full border px-3 py-1.5 text-sm transition ${c._id === selecionada ? 'border-couro bg-couro text-papel-claro' : 'border-linha bg-papel-claro hover:bg-papel-escuro'}`}>
+          <button key={c._id} onClick={() => setSelecionada(c._id)} aria-pressed={c._id === selecionada}
+            className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition ${c._id === selecionada ? 'bg-texto text-cartao' : 'bg-cartao text-texto-2 shadow-cartao hover:text-texto'}`}>
             {c.nome}
           </button>
         ))}
-        <button className="rounded-full border border-dashed border-linha px-3 py-1.5 text-sm text-tinta-suave hover:bg-papel-escuro" onClick={() => setFormConta({})}>+ Nova conta</button>
+        <button className="shrink-0 rounded-full border-2 border-dashed border-linha px-4 py-2 text-sm font-semibold text-texto-2 hover:bg-cartao" onClick={() => setFormConta({})}>{t('rend.novaConta')}</button>
       </div>
 
       {!m ? <Carregando /> : (
         <>
-          {/* cabeçalho */}
-          <section className="folha overflow-hidden">
-            <div className="bg-couro-escuro px-5 py-5 text-papel-claro">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.14em] text-papel/70">{conta.instituicao || 'Conta de rendimento'} · {conta.nome}</p>
-                  <p className="num mt-1 text-3xl font-medium sm:text-4xl">{dinheiro(m.saldoAtual, moeda)}</p>
-                  <p className="mt-1 text-sm text-papel/80">
-                    {m.variacao >= 0 ? '▲' : '▼'} {dinheiro(Math.abs(m.variacao), moeda)} desde {dataCompleta(conta.dataInicio)} · início {dinheiro(m.saldoInicial, moeda)}
-                  </p>
-                </div>
-                <button className="rounded-lg border border-papel/30 px-3 py-1.5 text-sm hover:bg-white/10" onClick={() => setFormConta(conta)}>Editar conta</button>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button className="btn bg-papel-claro text-couro-escuro hover:bg-white" onClick={() => setModalRend(true)}>
-                  + Lançar rendimento
+          <section className="overflow-hidden rounded-4xl bg-capa text-capa-texto shadow-flutua">
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold opacity-75">{conta.instituicao || t('rend.contaPadrao')} · {conta.nome}</p>
+                <button className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/20" onClick={() => setFormConta(conta)} aria-label={t('rend.editarConta')}>
+                  <Icone nome="lapis" className="h-4 w-4" />
                 </button>
-                <button className="btn border border-papel/40 text-papel-claro hover:bg-white/10" onClick={() => setFormMov({ tipo: 'resgate' })}>− Registrar saída</button>
-                <button className="btn border border-papel/40 text-papel-claro hover:bg-white/10" onClick={() => setFormMov({ tipo: 'aporte' })}>+ Aporte</button>
+              </div>
+              <p className="num mt-1 text-4xl font-extrabold tracking-tight sm:text-5xl">{dinheiro(m.saldoAtual, moeda)}</p>
+              <p className="mt-1 text-sm opacity-75">
+                {m.variacao >= 0 ? '▲' : '▼'} {t('rend.desde', { v: dinheiro(Math.abs(m.variacao), moeda), d: dataCompleta(conta.dataInicio), i: dinheiro(m.saldoInicial, moeda) })}
+              </p>
+              <div className="mt-6 grid grid-cols-3 gap-2">
+                {[
+                  ['rendimento', t('rend.lancar').replace('+ ', ''), () => setModalRend(true)],
+                  ['menos', t('rend.saida').replace('− ', ''), () => setFormMov({ tipo: 'resgate' })],
+                  ['mais', t('rend.aporte').replace('+ ', ''), () => setFormMov({ tipo: 'aporte' })],
+                ].map(([ic, txt, fn]) => (
+                  <button key={ic} onClick={fn} className="flex flex-col items-center gap-1.5 rounded-2xl bg-white/10 px-2 py-3 text-xs font-semibold hover:bg-white/20">
+                    <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-capa"><Icone nome={ic} className="h-4 w-4" forte /></span>
+                    <span className="text-center leading-tight">{txt}</span>
+                  </button>
+                ))}
               </div>
             </div>
             {!m.mes.rendimentoLancado && conta.modo !== 'manual' && (
-              <button onClick={() => setModalRend(true)} className="flex w-full items-center justify-between gap-3 bg-ambar-claro px-5 py-2.5 text-left text-sm text-tinta hover:brightness-95">
-                <span>O rendimento de <b>{mesLongo(m.mesAtual).toLowerCase()}</b> ainda não foi lançado — estimativa de <b className="num">{dinheiro(m.jurosEstimadoProximoMes, moeda)}</b>.</span>
-                <span className="text-couro">Lançar →</span>
-              </button>
+              automatico ? (
+                <p className="flex items-center gap-2 bg-black/15 px-6 py-3 text-sm">
+                  <Icone nome="relogio" className="h-4 w-4 shrink-0" />
+                  <span>{t('rend.automaticoEm', { v: dinheiro(m.jurosEstimadoProximoMes, moeda), d: dataCurta(ultimoDia(m.mesAtual)) })}</span>
+                </p>
+              ) : (
+                <button onClick={() => setModalRend(true)} className="flex w-full items-center justify-between gap-3 bg-black/15 px-6 py-3 text-left text-sm hover:bg-black/25">
+                  <span>{t('rend.naoLancado', { mes: mesLongo(m.mesAtual), v: dinheiro(m.jurosEstimadoProximoMes, moeda) })}</span>
+                  <span className="shrink-0 font-bold">{t('rend.lancarSeta')}</span>
+                </button>
+              )
             )}
           </section>
 
-          {/* métricas do mês */}
           <section>
-            <h3 className="mb-2 text-lg">Este mês <span className="font-corpo text-sm font-normal text-tinta-fraca">· {mesLongo(m.mesAtual)}</span></h3>
+            <h3 className="mb-2 px-1 text-base">{t('rend.esteMes')} <span className="text-sm font-semibold text-texto-3">· {mesLongo(m.mesAtual)}</span></h3>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Estatistica rotulo="Juros do mês" valor={dinheiro(m.mes.juros, moeda)} tom="pos" detalhe={m.mes.rendimentoLancado ? 'lançado' : 'ainda não lançado'} />
-              <Estatistica rotulo="Saídas do mês" valor={dinheiro(m.mes.saidas, moeda)} tom={m.mes.saidas ? 'neg' : undefined} detalhe="resgates, impostos e taxas" />
-              <Estatistica rotulo="Resultado líquido" valor={dinheiro(m.mes.liquido, moeda)} tom={m.mes.liquido >= 0 ? 'pos' : 'neg'} detalhe="juros − saídas" />
-              <Estatistica rotulo="Próximo rendimento" valor={dinheiro(m.jurosEstimadoProximoMes, moeda)} detalhe={`${pct(m.taxaMensalUsada, 3)} a.m. sobre o saldo atual`} />
+              <Estatistica rotulo={t('rend.jurosMes')} valor={dinheiro(m.mes.juros, moeda)} tom="pos" detalhe={m.mes.rendimentoLancado ? t('rend.lancado') : t('rend.naoLancadoCurto')} />
+              <Estatistica rotulo={t('rend.saidasMes')} valor={dinheiro(m.mes.saidas, moeda)} tom={m.mes.saidas ? 'neg' : undefined} detalhe={t('rend.tiposSaida')} />
+              <Estatistica rotulo={t('rend.liquido')} valor={dinheiro(m.mes.liquido, moeda)} tom={m.mes.liquido >= 0 ? 'pos' : 'neg'} detalhe={t('rend.jurosMenosSaidas')} />
+              <Estatistica rotulo={t('rend.proximo')} valor={dinheiro(m.jurosEstimadoProximoMes, moeda)} detalhe={t('rend.sobreSaldo', { t: pct(m.taxaMensalUsada, 3) })} />
             </div>
           </section>
 
-          {/* métricas acumuladas */}
           <section>
-            <h3 className="mb-2 text-lg">Acumulado</h3>
+            <h3 className="mb-2 px-1 text-base">{t('rend.acumulado')}</h3>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Estatistica rotulo="Juros acumulados" valor={dinheiro(m.totais.juros, moeda)} tom="pos" detalhe={`${dinheiro(m.juros12m, moeda)} nos últimos 12 meses`} />
-              <Estatistica rotulo="Saídas acumuladas" valor={dinheiro(m.totais.saidas, moeda)} tom={m.totais.saidas ? 'neg' : undefined}
-                detalhe={`Resgates ${dinheiro(m.totais.resgates, moeda)} · Impostos ${dinheiro(m.totais.impostos, moeda)} · Taxas ${dinheiro(m.totais.taxas, moeda)}`} />
-              <Estatistica rotulo="Taxa" valor={`${pct(m.taxaMensalUsada, 3)} a.m.`}
-                detalhe={`${pct(m.taxaAnualEquivalente)} a.a. equivalente${m.rentabilidadeMediaReal != null ? ` · média real ${pct(m.rentabilidadeMediaReal, 3)} a.m.` : ''}`} />
-              <Estatistica rotulo="Retirada sustentável" valor={`${dinheiro(m.saidaSustentavelMensal, moeda)}/mês`} detalhe="máximo sem reduzir o montante" />
+              <Estatistica rotulo={t('rend.jurosAcum')} valor={dinheiro(m.totais.juros, moeda)} tom="pos" detalhe={t('rend.ult12', { v: dinheiro(m.juros12m, moeda) })} />
+              <Estatistica rotulo={t('rend.saidasAcum')} valor={dinheiro(m.totais.saidas, moeda)} tom={m.totais.saidas ? 'neg' : undefined}
+                detalhe={t('rend.detalheSaidas', { r: dinheiro(m.totais.resgates, moeda), i: dinheiro(m.totais.impostos, moeda), t: dinheiro(m.totais.taxas, moeda) })} />
+              <Estatistica rotulo={t('rend.taxa')} valor={`${pct(m.taxaMensalUsada, 3)} ${t('rend.am')}`}
+                detalhe={t('rend.anual', { a: pct(m.taxaAnualEquivalente) }) + (m.rentabilidadeMediaReal != null ? t('rend.mediaReal', { m: pct(m.rentabilidadeMediaReal, 3) }) : '')} />
+              <Estatistica rotulo={t('rend.sustentavel')} valor={dinheiro(m.saidaSustentavelMensal, moeda)} detalhe={t('rend.semReduzir')} />
             </div>
           </section>
 
-          {/* diagnóstico */}
-          <section className={`folha flex gap-3 p-4 ${m.rendimentoCobreSaidas ? 'border-verde/40' : 'border-vermelho/40'}`}>
-            <span className="text-2xl" aria-hidden>{m.rendimentoCobreSaidas ? '🌱' : '⏳'}</span>
-            <div className="text-sm">
-              {m.mediaSaidasMensal <= 0 ? (
-                <p>Sem saídas recentes: todo o rendimento está ficando na conta.</p>
-              ) : m.rendimentoCobreSaidas ? (
-                <p>
-                  Suas saídas médias (<b className="num">{dinheiro(m.mediaSaidasMensal, moeda)}/mês</b>) estão abaixo dos juros estimados
-                  (<b className="num">{dinheiro(m.jurosEstimadoProximoMes, moeda)}</b>). O montante continua crescendo — sobram
-                  <b className="num"> {dinheiro(m.jurosEstimadoProximoMes - m.mediaSaidasMensal, moeda)}</b> por mês.
-                </p>
-              ) : (
-                <p>
-                  Suas saídas médias (<b className="num">{dinheiro(m.mediaSaidasMensal, moeda)}/mês</b>) superam os juros
-                  (<b className="num">{dinheiro(m.jurosEstimadoProximoMes, moeda)}</b>). Nesse ritmo o saldo dura cerca de
-                  <b> {duracao(m.duracaoMeses)}</b>. Para preservar o montante, retire até <b className="num">{dinheiro(m.saidaSustentavelMensal, moeda)}</b> por mês.
-                </p>
-              )}
-              <p className="mt-1 text-xs text-tinta-fraca">Média de saídas calculada nos últimos 3 meses fechados.</p>
+          <section className={`flex gap-3 rounded-3xl p-5 ${m.rendimentoCobreSaidas ? 'bg-pos-suave' : 'bg-aviso-suave'}`}>
+            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-cartao ${m.rendimentoCobreSaidas ? 'text-pos' : 'text-aviso'}`}>
+              <Icone nome={m.rendimentoCobreSaidas ? 'rendimento' : 'relogio'} className="h-4 w-4" forte />
+            </span>
+            <div className="text-sm leading-relaxed">
+              <p>
+                {m.mediaSaidasMensal <= 0 ? t('rend.semSaidas')
+                  : m.rendimentoCobreSaidas
+                    ? t('rend.cobre', { s: dinheiro(m.mediaSaidasMensal, moeda), j: dinheiro(m.jurosEstimadoProximoMes, moeda), d: dinheiro(m.jurosEstimadoProximoMes - m.mediaSaidasMensal, moeda) })
+                    : t('rend.naoCobre', { s: dinheiro(m.mediaSaidasMensal, moeda), j: dinheiro(m.jurosEstimadoProximoMes, moeda), t: duracao(m.duracaoMeses, t), r: dinheiro(m.saidaSustentavelMensal, moeda) })}
+              </p>
+              <p className="mt-1 text-xs text-texto-2">{t('rend.mediaNota')}</p>
             </div>
           </section>
 
-          {/* gráficos */}
-          <section className="grid gap-4 lg:grid-cols-2">
-            <div className="folha p-4">
-              <h3 className="mb-2 text-lg">Juros × saídas</h3>
-              <BarrasJurosSaidas serie={m.serie} moeda={moeda} />
-            </div>
-            <div className="folha p-4">
-              <h3 className="mb-2 text-lg">Saldo e projeção</h3>
-              <LinhaSaldo serie={m.serie} projecao={m.projecao12m} moeda={moeda} />
-            </div>
+          <section className="grid gap-5 lg:grid-cols-2">
+            <div className="cartao p-5"><h3 className="mb-3 text-base">{t('rend.jurosXSaidas')}</h3><BarrasJurosSaidas serie={m.serie} moeda={moeda} /></div>
+            <div className="cartao p-5"><h3 className="mb-3 text-base">{t('rend.saldoProjecao')}</h3><LinhaSaldo serie={m.serie} projecao={m.projecao12m} moeda={moeda} /></div>
           </section>
 
-          {/* tabelas */}
-          <section className="folha overflow-hidden">
-            <div className="flex border-b border-linha">
-              {[['meses', 'Mês a mês'], ['movimentos', `Movimentos (${movs.length})`], ['projecao', 'Projeção']].map(([k, t]) => (
-                <button key={k} onClick={() => setAba(k)} className={`flex-1 px-3 py-3 text-sm font-medium ${aba === k ? 'border-b-2 border-couro text-couro' : 'text-tinta-suave'}`}>{t}</button>
-              ))}
+          <section className="cartao overflow-hidden">
+            <div className="p-2">
+              <Segmentado valor={aba} aoMudar={setAba} opcoes={[['meses', t('rend.mesAMes')], ['movimentos', t('rend.movimentos', { n: movs.length })], ['projecao', t('rend.projecao')]]} />
             </div>
             {aba === 'meses' && <TabelaMeses serie={m.serie} moeda={moeda} />}
             {aba === 'movimentos' && (
               <ListaMovimentos movs={movs} moeda={moeda} aoEditar={setFormMov}
-                aoApagar={async (id) => { await del(`/movimentos/${id}`); await recarregar(); avisar('Movimento apagado'); }} />
+                aoApagar={async (id) => { await del(`/movimentos/${id}`); await recarregar(); avisar(t('rend.movApagado')); }} />
             )}
             {aba === 'projecao' && <TabelaProjecao proj={m.projecao12m} moeda={moeda} saida={m.mediaSaidasMensal} />}
           </section>
@@ -180,46 +167,40 @@ export default function Rendimento() {
       )}
 
       <FormConta aberto={formConta !== null} conta={formConta} aoFechar={() => setFormConta(null)}
-        aoSalvar={async (c) => { setFormConta(null); await carregarContas(); setSelecionada(c._id); await carregarConta(c._id); avisar('Conta salva'); }}
-        aoApagar={async (id) => { await del(`/contas/${id}`); setFormConta(null); setSelecionada(null); await carregarContas(); avisar('Conta apagada'); }} />
+        aoSalvar={async (c) => { setFormConta(null); await carregarContas(); setSelecionada(c._id); await carregarConta(c._id); avisar(t('rend.salva')); }}
+        aoApagar={async (id) => { await del(`/contas/${id}`); setFormConta(null); setSelecionada(null); await carregarContas(); avisar(t('rend.apagada')); }} />
       <FormMovimento aberto={formMov !== null} mov={formMov} conta={conta} saldo={m?.saldoAtual} aoFechar={() => setFormMov(null)}
-        aoSalvar={async () => { setFormMov(null); await recarregar(); avisar('Movimento registrado'); }} />
+        aoSalvar={async () => { setFormMov(null); await recarregar(); avisar(t('rend.movRegistrado')); }} />
       {conta && (
         <ModalRendimento aberto={modalRend} conta={conta} metricas={m} movs={movs} aoFechar={() => setModalRend(false)}
-          aoSalvar={async (v) => { setModalRend(false); await recarregar(); avisar(`Rendimento de ${dinheiro(v, moeda)} lançado`); }} />
+          aoSalvar={async (v) => { setModalRend(false); await recarregar(); avisar(t('rend.rendLancado', { v: dinheiro(v, moeda) })); }} />
       )}
     </div>
   );
 }
 
+const th = 'px-3 py-3 text-right text-xs font-semibold text-texto-3';
 function TabelaMeses({ serie, moeda }) {
-  const linhas = [...serie].reverse();
+  const t = useT();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead className="bg-papel-escuro/50 text-left">
-          <tr className="rotulo">
-            <th className="px-4 py-2 font-semibold">Mês</th>
-            <th className="px-3 py-2 text-right font-semibold">Abertura</th>
-            <th className="px-3 py-2 text-right font-semibold">Juros</th>
-            <th className="px-3 py-2 text-right font-semibold">Rentab.</th>
-            <th className="px-3 py-2 text-right font-semibold">Aportes</th>
-            <th className="px-3 py-2 text-right font-semibold">Saídas</th>
-            <th className="px-3 py-2 text-right font-semibold">Líquido</th>
-            <th className="px-4 py-2 text-right font-semibold">Fechamento</th>
-          </tr>
-        </thead>
+      <table className="w-full min-w-[680px] text-sm">
+        <thead><tr className="border-b border-linha">
+          <th className={`${th} pl-5 text-left`}>{t('rend.col.mes')}</th><th className={th}>{t('rend.col.abertura')}</th><th className={th}>{t('rend.col.juros')}</th>
+          <th className={th}>{t('rend.col.rentab')}</th><th className={th}>{t('rend.col.aportes')}</th><th className={th}>{t('rend.col.saidas')}</th>
+          <th className={th}>{t('rend.col.liquido')}</th><th className={`${th} pr-5`}>{t('rend.col.fechamento')}</th>
+        </tr></thead>
         <tbody className="num">
-          {linhas.map((l) => (
-            <tr key={l.mes} className="border-t border-linha/70">
-              <td className="px-4 py-2 font-corpo capitalize">{mesCurto(l.mes)}</td>
-              <td className="px-3 py-2 text-right">{dinheiro(l.abertura, moeda)}</td>
-              <td className="px-3 py-2 text-right text-verde">{l.juros ? dinheiro(l.juros, moeda) : '—'}</td>
-              <td className="px-3 py-2 text-right text-tinta-suave">{l.juros ? pct(l.rentabilidade, 3) : '—'}</td>
-              <td className="px-3 py-2 text-right">{l.aportes ? dinheiro(l.aportes, moeda) : '—'}</td>
-              <td className="px-3 py-2 text-right text-vermelho" title={`Resgates ${l.resgates} · Impostos ${l.impostos} · Taxas ${l.taxas}`}>{l.saidas ? dinheiro(l.saidas, moeda) : '—'}</td>
-              <td className={`px-3 py-2 text-right ${l.liquido >= 0 ? 'text-verde' : 'text-vermelho'}`}>{dinheiro(l.liquido, moeda)}</td>
-              <td className="px-4 py-2 text-right font-medium">{dinheiro(l.fechamento, moeda)}</td>
+          {[...serie].reverse().map((l) => (
+            <tr key={l.mes} className="border-b border-linha last:border-0">
+              <td className="py-3 pl-5 pr-3 font-semibold">{mesCurto(l.mes)}</td>
+              <td className="px-3 py-3 text-right text-texto-2">{dinheiro(l.abertura, moeda)}</td>
+              <td className="px-3 py-3 text-right text-pos">{l.juros ? dinheiro(l.juros, moeda) : '—'}</td>
+              <td className="px-3 py-3 text-right text-texto-3">{l.juros ? pct(l.rentabilidade, 3) : '—'}</td>
+              <td className="px-3 py-3 text-right">{l.aportes ? dinheiro(l.aportes, moeda) : '—'}</td>
+              <td className="px-3 py-3 text-right text-neg">{l.saidas ? dinheiro(l.saidas, moeda) : '—'}</td>
+              <td className={`px-3 py-3 text-right font-semibold ${l.liquido >= 0 ? 'text-pos' : 'text-neg'}`}>{dinheiro(l.liquido, moeda)}</td>
+              <td className="py-3 pl-3 pr-5 text-right font-bold">{dinheiro(l.fechamento, moeda)}</td>
             </tr>
           ))}
         </tbody>
@@ -229,23 +210,23 @@ function TabelaMeses({ serie, moeda }) {
 }
 
 function TabelaProjecao({ proj, moeda, saida }) {
+  const t = useT();
   return (
     <div className="overflow-x-auto">
-      <p className="px-4 pt-3 text-xs text-tinta-fraca">Considera a taxa atual e saída mensal média de {dinheiro(saida, moeda)}.</p>
+      <p className="px-5 pt-1 text-xs text-texto-3">{t('rend.projNota', { v: dinheiro(saida, moeda) })}</p>
       <table className="w-full min-w-[480px] text-sm">
-        <thead className="text-left"><tr className="rotulo">
-          <th className="px-4 py-2 font-semibold">Mês</th><th className="px-3 py-2 text-right font-semibold">Juros</th>
-          <th className="px-3 py-2 text-right font-semibold">Saída</th><th className="px-3 py-2 text-right font-semibold">Juros acum.</th>
-          <th className="px-4 py-2 text-right font-semibold">Saldo</th>
+        <thead><tr className="border-b border-linha">
+          <th className={`${th} pl-5 text-left`}>{t('rend.col.mes')}</th><th className={th}>{t('rend.col.juros')}</th><th className={th}>{t('rend.col.saida')}</th>
+          <th className={th}>{t('rend.col.jurosAcum')}</th><th className={`${th} pr-5`}>{t('rend.col.saldo')}</th>
         </tr></thead>
         <tbody className="num">
           {proj.map((p) => (
-            <tr key={p.mes} className="border-t border-linha/70">
-              <td className="px-4 py-2 font-corpo capitalize">{mesCurto(p.mes)}</td>
-              <td className="px-3 py-2 text-right text-verde">{dinheiro(p.juros, moeda)}</td>
-              <td className="px-3 py-2 text-right text-vermelho">{dinheiro(p.saida, moeda)}</td>
-              <td className="px-3 py-2 text-right">{dinheiro(p.jurosAcumulados, moeda)}</td>
-              <td className="px-4 py-2 text-right font-medium">{dinheiro(p.saldo, moeda)}</td>
+            <tr key={p.mes} className="border-b border-linha last:border-0">
+              <td className="py-3 pl-5 pr-3 font-semibold">{mesCurto(p.mes)}</td>
+              <td className="px-3 py-3 text-right text-pos">{dinheiro(p.juros, moeda)}</td>
+              <td className="px-3 py-3 text-right text-neg">{dinheiro(p.saida, moeda)}</td>
+              <td className="px-3 py-3 text-right">{dinheiro(p.jurosAcumulados, moeda)}</td>
+              <td className="py-3 pl-3 pr-5 text-right font-bold">{dinheiro(p.saldo, moeda)}</td>
             </tr>
           ))}
         </tbody>
@@ -255,21 +236,24 @@ function TabelaProjecao({ proj, moeda, saida }) {
 }
 
 function ListaMovimentos({ movs, moeda, aoEditar, aoApagar }) {
-  if (!movs.length) return <p className="px-4 py-8 text-center text-sm text-tinta-suave">Nenhum movimento ainda.</p>;
+  const t = useT();
+  if (!movs.length) return <p className="px-5 py-10 text-center text-sm text-texto-2">{t('rend.semMov')}</p>;
   return (
-    <ul className="divide-y divide-linha/70">
+    <ul className="divide-y divide-linha">
       {movs.map((mv) => {
-        const t = TIPOS[mv.tipo];
+        const saida = SAIDAS.includes(mv.tipo);
         return (
-          <li key={mv._id} className="flex items-center gap-3 px-4 py-3">
-            <span className={`chip ${t.chip}`}>{t.nome}</span>
+          <li key={mv._id} className="flex items-center gap-3 px-5 py-3.5">
+            <span className={`chip ${CHIP[mv.tipo]}`}>{t(`rend.tipo.${mv.tipo}`)}</span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{mv.descricao || t.nome}</p>
-              <p className="text-xs text-tinta-fraca">{dataCompleta(mv.data)}</p>
+              <p className="truncate text-sm font-semibold">{mv.descricao || (mv.tipo === 'rendimento' ? mesCurto(mv.data.slice(0, 7)) : t(`rend.tipo.${mv.tipo}`))}</p>
+              <p className="flex items-center gap-1 text-xs text-texto-3">{dataCompleta(mv.data)}{mv.automatico && <><span aria-hidden>·</span><Icone nome="relogio" className="h-3 w-3" />{t('rend.automatico')}</>}</p>
             </div>
-            <span className={`num text-sm font-medium ${t.cor}`}>{t.sinal} {dinheiro(mv.valor, moeda)}</span>
-            <button className="text-sm text-tinta-fraca hover:text-tinta" onClick={() => aoEditar(mv)} aria-label="Editar">✎</button>
-            <BotaoConfirmar className="text-sm text-tinta-fraca hover:text-vermelho" texto="Apagar?" aoConfirmar={() => aoApagar(mv._id)}>🗑</BotaoConfirmar>
+            <span className={`num text-sm font-bold ${saida ? 'text-neg' : 'text-pos'}`}>{saida ? '−' : '+'}{dinheiro(mv.valor, moeda)}</span>
+            <button className="rounded-full p-2 text-texto-3 hover:bg-sutil hover:text-texto" onClick={() => aoEditar(mv)} aria-label={t('comum.editar')}><Icone nome="lapis" className="h-4 w-4" /></button>
+            <BotaoConfirmar className="rounded-full p-2 text-xs font-semibold text-texto-3 hover:bg-neg-suave hover:text-neg" rotulo={t('comum.apagar')} texto={t('comum.apagar')} aoConfirmar={() => aoApagar(mv._id)}>
+              <Icone nome="lixo" className="h-4 w-4" />
+            </BotaoConfirmar>
           </li>
         );
       })}
@@ -277,24 +261,41 @@ function ListaMovimentos({ movs, moeda, aoEditar, aoApagar }) {
   );
 }
 
+function Interruptor({ id, ligado, aoMudar, rotulo, dica }) {
+  return (
+    <label htmlFor={id} className="flex cursor-pointer items-start gap-3 rounded-2xl bg-sutil p-4">
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">{rotulo}</span>
+        {dica && <span className="mt-0.5 block text-xs text-texto-3">{dica}</span>}
+      </span>
+      <input id={id} type="checkbox" role="switch" checked={ligado} onChange={(e) => aoMudar(e.target.checked)} className="peer sr-only" />
+      <span className="relative mt-0.5 h-7 w-12 shrink-0 rounded-full bg-linha transition peer-checked:bg-marca peer-focus-visible:ring-4 peer-focus-visible:ring-marca/25">
+        <span className={`absolute top-1 h-5 w-5 rounded-full bg-cartao shadow transition-all ${ligado ? 'left-6' : 'left-1'}`} />
+      </span>
+    </label>
+  );
+}
+
 function FormConta({ aberto, conta, aoFechar, aoSalvar, aoApagar }) {
+  const t = useT();
   const avisar = useAviso();
   const novo = !conta?._id;
   const [f, setF] = useState({});
   useEffect(() => {
     if (!aberto) return;
     setF(conta?._id
-      ? { ...conta, saldoInicial: String(conta.saldoInicial).replace('.', ','), taxa: String(conta.taxa).replace('.', ','), dataInicio: paraInput(conta.dataInicio) }
-      : { nome: '', instituicao: '', moeda: 'BRL', saldoInicial: '', dataInicio: `${mesAtual()}-01`, modo: 'mensal', taxa: '', nota: '' });
+      ? { ...conta, saldoInicial: paraCampo(conta.saldoInicial), taxa: paraCampo(conta.taxa), dataInicio: paraInput(conta.dataInicio), rendimentoAutomatico: conta.rendimentoAutomatico !== false }
+      : { nome: '', instituicao: '', moeda: 'BRL', saldoInicial: '', dataInicio: `${mesAtual()}-01`, modo: 'mensal', taxa: '', nota: '', rendimentoAutomatico: true, incluirAnteriores: false });
   }, [aberto, conta]);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const inicioPassado = f.dataInicio && f.dataInicio.slice(0, 7) < mesAtual();
 
   const salvar = async (e) => {
     e.preventDefault();
     const corpo = { ...f, saldoInicial: lerNumero(f.saldoInicial), taxa: f.modo === 'manual' ? 0 : lerNumero(f.taxa) };
-    if (!corpo.nome) return avisar('Dê um nome à conta', 'erro');
-    if (!(corpo.saldoInicial >= 0)) return avisar('Saldo inicial inválido', 'erro');
-    if (f.modo !== 'manual' && !(corpo.taxa >= 0)) return avisar('Taxa inválida', 'erro');
+    if (!corpo.nome) return avisar(t('rend.deNome'), 'erro');
+    if (!(corpo.saldoInicial >= 0)) return avisar(t('rend.saldoInvalido'), 'erro');
+    if (f.modo !== 'manual' && !(corpo.taxa >= 0)) return avisar(t('rend.taxaInvalida'), 'erro');
     try {
       const c = novo ? await post('/contas', corpo) : await put(`/contas/${conta._id}`, corpo);
       aoSalvar(c);
@@ -302,39 +303,37 @@ function FormConta({ aberto, conta, aoFechar, aoSalvar, aoApagar }) {
   };
 
   return (
-    <Modal titulo={novo ? 'Nova conta de rendimento' : 'Editar conta'} aberto={aberto} aoFechar={aoFechar}>
-      <form onSubmit={salvar} className="grid grid-cols-2 gap-3">
-        <Campo rotulo="Nome" className="col-span-2"><input className="campo" value={f.nome || ''} onChange={set('nome')} placeholder="Ex.: Reserva" autoFocus /></Campo>
-        <Campo rotulo="Instituição" className="col-span-2"><input className="campo" value={f.instituicao || ''} onChange={set('instituicao')} placeholder="Banco ou corretora" /></Campo>
-        <Campo rotulo="Saldo inicial"><input className="campo num" inputMode="decimal" value={f.saldoInicial ?? ''} onChange={set('saldoInicial')} placeholder="350.000,00" /></Campo>
-        <Campo rotulo="Moeda">
-          <select className="campo" value={f.moeda} onChange={set('moeda')}><option>BRL</option><option>EUR</option><option>USD</option></select>
-        </Campo>
-        <Campo rotulo="Data do saldo inicial" className="col-span-2" dica="O histórico mês a mês começa nesta data.">
-          <input type="date" className="campo" value={f.dataInicio || ''} onChange={set('dataInicio')} />
-        </Campo>
-        <Campo rotulo="Como rende" className="col-span-2">
-          <div className="grid grid-cols-3 gap-2">
-            {[['mensal', '% ao mês'], ['anual', '% ao ano'], ['manual', 'Valor do extrato']].map(([k, t]) => (
-              <button type="button" key={k} onClick={() => setF((x) => ({ ...x, modo: k }))}
-                className={`rounded-lg border px-2 py-2 text-sm ${f.modo === k ? 'border-couro bg-couro text-papel-claro' : 'border-linha bg-white/60'}`}>{t}</button>
-            ))}
-          </div>
+    <Modal titulo={novo ? t('rend.novaTitulo') : t('rend.editarTitulo')} aberto={aberto} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="grid grid-cols-2 gap-4">
+        <Campo rotulo={t('rend.nome')} className="col-span-2"><input id="conta-nome" className="campo" value={f.nome || ''} onChange={set('nome')} placeholder={t('rend.exNome')} /></Campo>
+        <Campo rotulo={t('rend.instituicao')} className="col-span-2"><input id="conta-inst" className="campo" value={f.instituicao || ''} onChange={set('instituicao')} placeholder={t('rend.exInst')} /></Campo>
+        <Campo rotulo={t('rend.saldoInicial')}><input id="conta-saldo" className="campo num" inputMode="decimal" value={f.saldoInicial ?? ''} onChange={set('saldoInicial')} placeholder="350.000" /></Campo>
+        <Campo rotulo={t('comum.moeda')}><select id="conta-moeda" className="campo" value={f.moeda} onChange={set('moeda')}><option>BRL</option><option>EUR</option><option>USD</option></select></Campo>
+        <Campo rotulo={t('rend.dataSaldo')} className="col-span-2" dica={t('rend.dataDica')}><input id="conta-data" type="date" className="campo" value={f.dataInicio || ''} onChange={set('dataInicio')} /></Campo>
+        <Campo rotulo={t('rend.comoRende')} className="col-span-2">
+          <Segmentado valor={f.modo} aoMudar={(k) => setF((x) => ({ ...x, modo: k }))} opcoes={[['mensal', t('rend.pctMes')], ['anual', t('rend.pctAno')], ['manual', t('rend.extrato')]]} />
         </Campo>
         {f.modo !== 'manual' ? (
-          <Campo rotulo={f.modo === 'anual' ? 'Taxa anual (%)' : 'Taxa mensal (%)'} className="col-span-2"
-            dica={f.modo === 'anual' ? 'Convertida para a taxa mensal equivalente: (1 + a)^(1/12) − 1.' : 'Ex.: 0,8 para 0,8% ao mês.'}>
-            <input className="campo num" inputMode="decimal" value={f.taxa ?? ''} onChange={set('taxa')} placeholder={f.modo === 'anual' ? '10,5' : '0,8'} />
-          </Campo>
+          <>
+            <Campo rotulo={f.modo === 'anual' ? t('rend.taxaAnual') : t('rend.taxaMensal')} className="col-span-2" dica={f.modo === 'anual' ? t('rend.dicaAnual') : t('rend.dicaMensal')}>
+              <input id="conta-taxa" className="campo num" inputMode="decimal" value={f.taxa ?? ''} onChange={set('taxa')} placeholder={f.modo === 'anual' ? '10,5' : '0,8'} />
+            </Campo>
+            <div className="col-span-2 space-y-2">
+              <Interruptor id="conta-auto" ligado={!!f.rendimentoAutomatico} aoMudar={(v) => setF((x) => ({ ...x, rendimentoAutomatico: v }))} rotulo={t('rend.auto')} dica={t('rend.autoDica')} />
+              {novo && f.rendimentoAutomatico && inicioPassado && (
+                <Interruptor id="conta-anteriores" ligado={!!f.incluirAnteriores} aoMudar={(v) => setF((x) => ({ ...x, incluirAnteriores: v }))} rotulo={t('rend.incluirAnteriores')} />
+              )}
+            </div>
+          </>
         ) : (
-          <p className="col-span-2 rounded-lg bg-papel-escuro/60 p-3 text-xs text-tinta-suave">Você lança todo mês o valor que veio no extrato. As projeções usam a rentabilidade média real dos meses lançados.</p>
+          <p className="col-span-2 rounded-2xl bg-sutil p-4 text-xs text-texto-2">{t('rend.manualNota')}</p>
         )}
-        <Campo rotulo="Observação" className="col-span-2"><input className="campo" value={f.nota || ''} onChange={set('nota')} /></Campo>
+        <Campo rotulo={t('rend.observacao')} className="col-span-2"><input id="conta-nota" className="campo" value={f.nota || ''} onChange={set('nota')} /></Campo>
         <div className="col-span-2 mt-2 flex flex-wrap justify-between gap-2">
-          {!novo && aoApagar ? <BotaoConfirmar texto="Apagar conta e movimentos?" aoConfirmar={() => aoApagar(conta._id)}>Apagar conta</BotaoConfirmar> : <span />}
+          {!novo && aoApagar ? <BotaoConfirmar texto={t('rend.apagarContaConf')} aoConfirmar={() => aoApagar(conta._id)}>{t('rend.apagarConta')}</BotaoConfirmar> : <span />}
           <div className="flex gap-2">
-            <button type="button" className="btn-secundario" onClick={aoFechar}>Cancelar</button>
-            <button className="btn-primario">Salvar</button>
+            <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
+            <button className="btn-primario">{t('comum.salvar')}</button>
           </div>
         </div>
       </form>
@@ -343,21 +342,22 @@ function FormConta({ aberto, conta, aoFechar, aoSalvar, aoApagar }) {
 }
 
 function FormMovimento({ aberto, mov, conta, saldo, aoFechar, aoSalvar }) {
+  const t = useT();
   const avisar = useAviso();
   const novo = !mov?._id;
   const [f, setF] = useState({});
   useEffect(() => {
     if (!aberto) return;
-    setF(mov?._id ? { ...mov, valor: String(mov.valor).replace('.', ','), data: paraInput(mov.data) } : { tipo: mov?.tipo || 'resgate', valor: '', data: hojeISO(), descricao: '' });
+    setF(mov?._id ? { ...mov, valor: paraCampo(mov.valor), data: paraInput(mov.data) } : { tipo: mov?.tipo || 'resgate', valor: '', data: hojeISO(), descricao: '' });
   }, [aberto, mov]);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
-  const ehSaida = ['resgate', 'imposto', 'taxa'].includes(f.tipo);
-  const tipos = ehSaida || !f.tipo ? ['resgate', 'imposto', 'taxa'] : ['aporte', 'rendimento'];
+  const ehSaida = SAIDAS.includes(f.tipo);
+  const tipos = ehSaida || !f.tipo ? SAIDAS : ['aporte', 'rendimento'];
 
   const salvar = async (e) => {
     e.preventDefault();
     const valor = lerNumero(f.valor);
-    if (!(valor > 0)) return avisar('Informe um valor', 'erro');
+    if (!(valor > 0)) return avisar(t('rend.informeValor'), 'erro');
     try {
       const corpo = { tipo: f.tipo, valor, data: f.data, descricao: f.descricao };
       novo ? await post(`/contas/${conta._id}/movimentos`, corpo) : await put(`/movimentos/${mov._id}`, corpo);
@@ -366,24 +366,19 @@ function FormMovimento({ aberto, mov, conta, saldo, aoFechar, aoSalvar }) {
   };
 
   return (
-    <Modal titulo={novo ? (ehSaida ? 'Registrar saída' : 'Registrar entrada') : 'Editar movimento'} aberto={aberto} aoFechar={aoFechar}>
-      <form onSubmit={salvar} className="space-y-3">
-        <div className={`grid gap-2 ${tipos.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-          {tipos.map((t) => (
-            <button type="button" key={t} onClick={() => setF((x) => ({ ...x, tipo: t }))}
-              className={`rounded-lg border px-2 py-2 text-sm ${f.tipo === t ? 'border-couro bg-couro text-papel-claro' : 'border-linha bg-white/60'}`}>{TIPOS[t].nome}</button>
-          ))}
-        </div>
+    <Modal titulo={novo ? (ehSaida ? t('rend.regSaida') : t('rend.regEntrada')) : t('rend.editarMov')} aberto={aberto} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="space-y-4">
+        <Segmentado valor={f.tipo} aoMudar={(k) => setF((x) => ({ ...x, tipo: k }))} opcoes={tipos.map((k) => [k, t(`rend.tipo.${k}`)])} />
         <div className="grid grid-cols-2 gap-3">
-          <Campo rotulo={`Valor (${conta?.moeda})`} dica={ehSaida && saldo != null ? `Saldo disponível: ${dinheiro(saldo, conta?.moeda)}` : undefined}>
-            <input className="campo num" inputMode="decimal" value={f.valor ?? ''} onChange={set('valor')} autoFocus placeholder="0,00" />
+          <Campo rotulo={`${t('comum.valor')} (${conta?.moeda})`} dica={ehSaida && saldo != null ? t('rend.disponivel', { v: dinheiro(saldo, conta?.moeda) }) : undefined}>
+            <input id="mov-valor" className="campo num text-xl font-bold" inputMode="decimal" value={f.valor ?? ''} onChange={set('valor')} autoFocus placeholder={t('comum.zero')} />
           </Campo>
-          <Campo rotulo="Data"><input type="date" className="campo" value={f.data || ''} onChange={set('data')} /></Campo>
+          <Campo rotulo={t('comum.data')}><input id="mov-data" type="date" className="campo" value={f.data || ''} onChange={set('data')} /></Campo>
         </div>
-        <Campo rotulo="Descrição"><input className="campo" value={f.descricao || ''} onChange={set('descricao')} placeholder={ehSaida ? 'Ex.: retirada para viagem' : ''} /></Campo>
+        <Campo rotulo={t('comum.descricao')}><input id="mov-desc" className="campo" value={f.descricao || ''} onChange={set('descricao')} placeholder={ehSaida ? t('rend.exSaida') : ''} /></Campo>
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" className="btn-secundario" onClick={aoFechar}>Cancelar</button>
-          <button className="btn-primario">Salvar</button>
+          <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
+          <button className="btn-primario">{t('comum.salvar')}</button>
         </div>
       </form>
     </Modal>
@@ -391,6 +386,7 @@ function FormMovimento({ aberto, mov, conta, saldo, aoFechar, aoSalvar }) {
 }
 
 function ModalRendimento({ aberto, conta, metricas, movs, aoFechar, aoSalvar }) {
+  const t = useT();
   const avisar = useAviso();
   const manual = conta.modo === 'manual';
   const [mes, setMes] = useState(mesAtual());
@@ -416,7 +412,7 @@ function ModalRendimento({ aberto, conta, metricas, movs, aoFechar, aoSalvar }) 
     const corpo = { mes, forcar };
     if (usarValor) {
       const v = lerNumero(valor);
-      if (!(v >= 0)) return avisar('Informe o valor do rendimento', 'erro');
+      if (!(v >= 0)) return avisar(t('rend.informeRend'), 'erro');
       corpo.valor = v;
     }
     try {
@@ -429,37 +425,30 @@ function ModalRendimento({ aberto, conta, metricas, movs, aoFechar, aoSalvar }) 
   };
 
   return (
-    <Modal titulo="Lançar rendimento" aberto={aberto} aoFechar={aoFechar}
-      rodape={<><button className="btn-secundario" onClick={aoFechar}>Cancelar</button>
+    <Modal titulo={t('rend.lancarTitulo')} aberto={aberto} aoFechar={aoFechar}
+      rodape={<><button className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
         {duplicado
-          ? <button className="btn bg-ambar text-white" onClick={() => salvar(true)}>Lançar mesmo assim</button>
-          : <button className="btn-primario" onClick={() => salvar()}>Lançar</button>}</>}>
+          ? <button className="btn bg-aviso text-cartao" onClick={() => salvar(true)}>{t('rend.lancarMesmo')}</button>
+          : <button className="btn-primario" onClick={() => salvar()}>{t('rend.lancarBotao')}</button>}</>}>
       <div className="space-y-4">
-        <Campo rotulo="Mês de referência" dica={pendentes.length > 1 ? `${pendentes.length} meses sem rendimento lançado` : undefined}>
-          <select className="campo" value={mes} onChange={(e) => setMes(e.target.value)}>
-            {opcoes.map((m) => <option key={m} value={m}>{mesLongo(m)}{lancados.has(m) ? ' ✓ lançado' : ''}</option>)}
+        <Campo rotulo={t('rend.mesRef')} dica={pendentes.length > 1 ? t('rend.semRend', { n: pendentes.length }) : undefined}>
+          <select id="rend-mes" className="campo" value={mes} onChange={(e) => setMes(e.target.value)}>
+            {opcoes.map((m) => <option key={m} value={m}>{mesLongo(m)}{lancados.has(m) ? t('rend.jaLancado') : ''}</option>)}
           </select>
         </Campo>
-        {!manual && (
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setUsarValor(false)} className={`rounded-lg border px-2 py-2 text-sm ${!usarValor ? 'border-couro bg-couro text-papel-claro' : 'border-linha bg-white/60'}`}>Calcular pela taxa</button>
-            <button type="button" onClick={() => setUsarValor(true)} className={`rounded-lg border px-2 py-2 text-sm ${usarValor ? 'border-couro bg-couro text-papel-claro' : 'border-linha bg-white/60'}`}>Valor do extrato</button>
-          </div>
-        )}
+        {!manual && <Segmentado valor={usarValor ? 'v' : 't'} aoMudar={(k) => setUsarValor(k === 'v')} opcoes={[['t', t('rend.calcTaxa')], ['v', t('rend.extrato')]]} />}
         {usarValor ? (
-          <Campo rotulo={`Rendimento creditado (${conta.moeda})`}>
-            <input className="campo num" inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" autoFocus />
+          <Campo rotulo={t('rend.creditado', { m: conta.moeda })}>
+            <input id="rend-valor" className="campo num text-xl font-bold" inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder={t('comum.zero')} autoFocus />
           </Campo>
         ) : (
-          <div className="rounded-lg bg-verde-claro p-3 text-sm">
-            <p>{pct(r, 3)} × saldo no fim do mês ({dinheiro(baseEst, conta.moeda)})</p>
-            <p className="num mt-1 text-xl font-medium text-verde">≈ {dinheiro(baseEst * (r / 100), conta.moeda)}</p>
-            <p className="mt-1 text-xs text-tinta-suave">O valor exato é calculado com os movimentos registrados até o último dia do mês.</p>
+          <div className="rounded-2xl bg-pos-suave p-4 text-sm">
+            <p className="text-texto-2">{t('rend.formula', { t: pct(r, 3), b: dinheiro(baseEst, conta.moeda) })}</p>
+            <p className="num mt-1 text-2xl font-extrabold text-pos">≈ {dinheiro(baseEst * (r / 100), conta.moeda)}</p>
+            <p className="mt-1 text-xs text-texto-2">{t('rend.exatoNota')}</p>
           </div>
         )}
-        {duplicado && (
-          <p className="rounded-lg bg-ambar-claro p-3 text-sm">Já existe rendimento lançado em {mesLongo(mes).toLowerCase()}. Para corrigir, apague o anterior na lista de movimentos, ou lance outro mesmo assim.</p>
-        )}
+        {duplicado && <p className="rounded-2xl bg-aviso-suave p-4 text-sm">{t('rend.duplicado', { mes: mesLongo(mes) })}</p>}
       </div>
     </Modal>
   );

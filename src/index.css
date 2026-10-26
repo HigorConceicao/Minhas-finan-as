@@ -2,32 +2,69 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  html { -webkit-text-size-adjust: 100%; }
-  body {
-    @apply bg-papel text-tinta font-corpo antialiased;
-    /* pauta de livro-caixa */
-    background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(217, 205, 182, 0.45) 31px, rgba(217, 205, 182, 0.45) 32px);
-    padding-bottom: env(safe-area-inset-bottom);
+/* Leve, estilo app de banco: neutros frios, um azul de destaque, verde/vermelho só para dinheiro entrando/saindo */
+:root {
+  --fundo: 244 245 248;  --cartao: 255 255 255;  --sutil: 238 240 245;  --linha: 228 231 238;
+  --texto: 17 22 33;  --texto-2: 75 83 99;  --texto-3: 132 140 156;
+  --marca: 41 82 235;  --marca-forte: 29 64 200;  --marca-suave: 232 238 255;  --sobre-marca: 255 255 255;
+  --capa: 29 54 170;  --capa-texto: 255 255 255;
+  --pos: 13 140 84;  --pos-suave: 226 245 235;
+  --neg: 214 48 48;  --neg-suave: 253 234 234;
+  --aviso: 196 120 10;  --aviso-suave: 254 243 220;
+  --sombra: 15 23 42;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fundo: 11 13 18;  --cartao: 21 24 32;  --sutil: 29 33 43;  --linha: 39 44 56;
+    --texto: 238 241 246;  --texto-2: 174 182 196;  --texto-3: 116 124 140;
+    --marca: 112 144 255;  --marca-forte: 140 166 255;  --marca-suave: 30 38 70;  --sobre-marca: 11 13 18;
+    --capa: 31 46 110;  --capa-texto: 238 241 246;
+    --pos: 74 210 140;  --pos-suave: 20 46 34;
+    --neg: 248 113 113;  --neg-suave: 58 24 26;
+    --aviso: 245 190 80;  --aviso-suave: 54 40 14;
+    --sombra: 0 0 0;
+    color-scheme: dark;
   }
-  h1, h2, h3 { @apply font-titulo; }
+}
+:root[data-theme="dark"] {
+  --fundo: 11 13 18;  --cartao: 21 24 32;  --sutil: 29 33 43;  --linha: 39 44 56;
+  --texto: 238 241 246;  --texto-2: 174 182 196;  --texto-3: 116 124 140;
+  --marca: 112 144 255;  --marca-forte: 140 166 255;  --marca-suave: 30 38 70;  --sobre-marca: 11 13 18;
+  --capa: 31 46 110;  --capa-texto: 238 241 246;
+  --pos: 74 210 140;  --pos-suave: 20 46 34;
+  --neg: 248 113 113;  --neg-suave: 58 24 26;
+  --aviso: 245 190 80;  --aviso-suave: 54 40 14;
+  --sombra: 0 0 0;
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-fundo font-sans text-texto antialiased; font-feature-settings: 'tnum' 1; }
+  h1, h2, h3 { @apply font-bold tracking-tight; text-wrap: balance; }
   input, select, textarea { @apply text-base; } /* evita zoom no iPhone */
+  :focus-visible { outline: 2px solid rgb(var(--marca)); outline-offset: 2px; }
 }
 
 @layer components {
-  .folha { @apply bg-papel-claro border border-linha rounded-xl shadow-folha; }
-  .num { @apply font-num tabular-nums tracking-tight; }
-  .rotulo { @apply text-[11px] uppercase tracking-[0.12em] text-tinta-fraca font-semibold; }
+  .cartao { @apply rounded-3xl bg-cartao shadow-cartao; }
+  .num { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .rotulo { @apply text-xs font-semibold text-texto-3; }
   .campo {
-    @apply w-full rounded-lg border border-linha bg-white/70 px-3 py-2 text-tinta outline-none transition
-      focus:border-couro focus:ring-2 focus:ring-couro/20;
+    @apply w-full rounded-2xl border border-linha bg-cartao px-4 py-3 text-texto outline-none transition
+      placeholder:text-texto-3 focus:border-marca focus:ring-4 focus:ring-marca/15;
   }
-  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 font-medium transition active:scale-[.98] disabled:opacity-50; }
-  .btn-primario { @apply btn bg-couro text-papel-claro hover:bg-couro-escuro; }
-  .btn-secundario { @apply btn border border-linha bg-papel-claro text-tinta hover:bg-papel-escuro; }
-  .btn-perigo { @apply btn text-vermelho hover:bg-vermelho-claro; }
-  .chip { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition active:scale-[.98] disabled:opacity-50; }
+  .btn-primario { @apply btn bg-marca text-sobre-marca hover:bg-marca-forte; }
+  .btn-secundario { @apply btn bg-sutil text-texto hover:bg-linha; }
+  .btn-perigo { @apply btn text-neg hover:bg-neg-suave; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold; }
+  .seg { @apply grid gap-1 rounded-2xl bg-sutil p-1; }
+  .seg-op { @apply rounded-xl px-2 py-2.5 text-sm font-semibold text-texto-2 transition; }
+  .seg-op[aria-pressed="true"] { @apply bg-cartao text-texto shadow-cartao; }
 }
 
-@keyframes subir { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
-.animar-subir { animation: subir .18s ease-out; }
+@keyframes subir { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+.animar-subir { animation: subir .22s cubic-bezier(.2,.8,.2,1); }
+@media (prefers-reduced-motion: reduce) { .animar-subir { animation: none; } * { transition: none !important; } }

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { Categoria, Lancamento, Recorrente, ContaRendimento, Movimento } from './models.js';
 import {
-  metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, SAIDAS,
+  metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, SAIDAS,
 } from './finance.js';
 import { obterTaxas, converter } from './cambio.js';
 
@@ -17,7 +17,8 @@ const intervaloDoMes = (mes) => {
   const [y, m] = mes.split('-').map(Number);
   return { $gte: new Date(Date.UTC(y, m - 1, 1)), $lt: new Date(Date.UTC(y, m, 1)) };
 };
-const erro = (res, status, mensagem) => res.status(status).json({ erro: mensagem });
+// `codigo` permite ao app mostrar a mensagem no idioma escolhido
+const erro = (res, status, mensagem, codigo = null, dados = undefined) => res.status(status).json({ erro: mensagem, codigo, dados });
 
 // ---------- autenticação simples por senha (APP_PASSWORD) ----------
 const SENHA = process.env.APP_PASSWORD || '';
@@ -28,7 +29,7 @@ api.post('/login', (req, res) => {
   if (!SENHA) return res.json({ token: 'aberto', protegido: false });
   const enviado = String(req.body?.senha || '');
   const ok = enviado.length === SENHA.length && crypto.timingSafeEqual(Buffer.from(enviado), Buffer.from(SENHA));
-  if (!ok) return erro(res, 401, 'Senha incorreta');
+  if (!ok) return erro(res, 401, 'Senha incorreta', 'senha_incorreta');
   res.json({ token: tokenEsperado(), protegido: true });
 });
 
@@ -38,7 +39,7 @@ api.use((req, res, next) => {
   if (!SENHA) return next();
   const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   if (t && t.length === 64 && crypto.timingSafeEqual(Buffer.from(t), Buffer.from(tokenEsperado()))) return next();
-  erro(res, 401, 'Não autorizado');
+  erro(res, 401, 'Não autorizado', 'nao_autorizado');
 });
 
 // ---------- recorrentes: gera os lançamentos devidos ----------
@@ -68,6 +69,18 @@ export async function gerarRecorrentes(hoje = new Date()) {
   }
   return criados;
 }
+
+// ---------- rendimento automático: lança os juros dos meses encerrados ----------
+export async function sincronizarRendimentos(conta, hoje = new Date()) {
+  if (!conta.rendimentoAutomatico) return 0;
+  const movs = await Movimento.find({ conta: conta._id }).lean();
+  const novos = rendimentosAutomaticos(conta, movs, hoje);
+  if (novos.length) await Movimento.insertMany(novos);
+  return novos.length;
+}
+const sincronizarTodas = async () => {
+  for (const c of await ContaRendimento.find({ rendimentoAutomatico: true }).lean()) await sincronizarRendimentos(c);
+};
 
 // ---------- câmbio ----------
 api.get('/cambio', wrap(async (_req, res) => res.json(await obterTaxas())));
@@ -181,6 +194,7 @@ api.get('/resumo', wrap(async (req, res) => {
   const { taxas, fonte, data: dataCambio } = await obterTaxas();
   const conv = (v, m) => converter(v, m, base, taxas);
 
+  await sincronizarTodas();
   const [cats, lancs, contas] = await Promise.all([
     Categoria.find().lean(),
     Lancamento.find({ data: intervaloDoMes(mes) }).lean(),
@@ -245,13 +259,14 @@ api.get('/resumo', wrap(async (req, res) => {
 }));
 
 // ---------- contas de rendimento ----------
-const camposConta = ({ nome, instituicao, moeda, saldoInicial, dataInicio, modo, taxa, nota }) =>
+const camposConta = ({ nome, instituicao, moeda, saldoInicial, dataInicio, modo, taxa, nota, rendimentoAutomatico }) =>
   Object.fromEntries(
-    Object.entries({ nome, instituicao, moeda, saldoInicial: saldoInicial === undefined ? undefined : round2(saldoInicial), dataInicio, modo, taxa, nota })
+    Object.entries({ nome, instituicao, moeda, saldoInicial: saldoInicial === undefined ? undefined : round2(saldoInicial), dataInicio, modo, taxa, nota, rendimentoAutomatico })
       .filter(([, v]) => v !== undefined)
   );
 
 api.get('/contas', wrap(async (_req, res) => {
+  await sincronizarTodas();
   const contas = await ContaRendimento.find().sort({ createdAt: 1 }).lean();
   const out = await Promise.all(contas.map(async (c) => {
     const movs = await Movimento.find({ conta: c._id }).lean();
@@ -260,11 +275,23 @@ api.get('/contas', wrap(async (_req, res) => {
   }));
   res.json(out);
 }));
-api.post('/contas', wrap(async (req, res) => res.status(201).json(await ContaRendimento.create(camposConta(req.body)))));
+api.post('/contas', wrap(async (req, res) => {
+  const dados = camposConta(req.body);
+  // "incluir meses anteriores": o automático vale desde a data do saldo inicial
+  dados.autoDesde = req.body?.incluirAnteriores && dados.dataInicio ? dados.dataInicio : new Date();
+  const c = await ContaRendimento.create(dados);
+  await sincronizarRendimentos(c.toObject());
+  res.status(201).json(c);
+}));
 api.put('/contas/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  const c = await ContaRendimento.findByIdAndUpdate(req.params.id, camposConta(req.body), { new: true, runValidators: true });
-  c ? res.json(c) : erro(res, 404, 'Conta não encontrada');
+  const antes = await ContaRendimento.findById(req.params.id).lean();
+  if (!antes) return erro(res, 404, 'Conta não encontrada');
+  const dados = camposConta(req.body);
+  // ligar o automático agora não preenche meses passados
+  if (dados.rendimentoAutomatico && !antes.rendimentoAutomatico) dados.autoDesde = new Date();
+  const c = await ContaRendimento.findByIdAndUpdate(req.params.id, dados, { new: true, runValidators: true });
+  res.json(c);
 }));
 api.delete('/contas/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
@@ -277,6 +304,7 @@ api.get('/contas/:id/metricas', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const c = await ContaRendimento.findById(req.params.id).lean();
   if (!c) return erro(res, 404, 'Conta não encontrada');
+  await sincronizarRendimentos(c);
   const movs = await Movimento.find({ conta: c._id }).lean();
   res.json({ conta: c, ...metricasConta(c, movs) });
 }));
@@ -297,7 +325,7 @@ api.post('/contas/:id/movimentos', wrap(async (req, res) => {
   if (SAIDAS.includes(dados.tipo)) {
     const movs = await Movimento.find({ conta: c._id }).lean();
     const saldo = saldoAte(c, movs, new Date(8640000000000000));
-    if (dados.valor > saldo) return erro(res, 400, `Saída maior que o saldo disponível (${saldo.toFixed(2)})`);
+    if (dados.valor > saldo) return erro(res, 400, `Saída maior que o saldo disponível (${saldo.toFixed(2)})`, 'saida_maior_saldo', { saldo, moeda: c.moeda });
   }
   res.status(201).json(await Movimento.create({ ...dados, conta: c._id }));
 }));
@@ -308,7 +336,9 @@ api.put('/movimentos/:id', wrap(async (req, res) => {
 }));
 api.delete('/movimentos/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  await Movimento.findByIdAndDelete(req.params.id);
+  const m = await Movimento.findByIdAndDelete(req.params.id).lean();
+  // rendimento apagado à mão: o automático não volta a lançar esse mês
+  if (m?.tipo === 'rendimento') await ContaRendimento.updateOne({ _id: m.conta }, { $addToSet: { rendimentoIgnorado: mesDe(m.data) } });
   res.status(204).end();
 }));
 
@@ -322,23 +352,22 @@ api.post('/contas/:id/aplicar-rendimento', wrap(async (req, res) => {
   const c = await ContaRendimento.findById(req.params.id).lean();
   if (!c) return erro(res, 404, 'Conta não encontrada');
   const mes = MES_RE.test(req.body?.mes || '') ? req.body.mes : mesDe(new Date());
-  if (mes < mesDe(c.dataInicio)) return erro(res, 400, 'Mês anterior ao início da conta');
+  if (mes < mesDe(c.dataInicio)) return erro(res, 400, 'Mês anterior ao início da conta', 'mes_anterior_inicio');
 
   const movs = await Movimento.find({ conta: c._id }).lean();
   const jaTem = movs.some((m) => m.tipo === 'rendimento' && mesDe(m.data) === mes);
-  if (jaTem && !req.body?.forcar) return erro(res, 409, 'Já existe rendimento lançado neste mês');
+  if (jaTem && !req.body?.forcar) return erro(res, 409, 'Já existe rendimento lançado neste mês', 'rendimento_duplicado');
 
   const fim = ultimoDiaDoMes(mes);
   const base = saldoAte(c, movs.filter((m) => !(m.tipo === 'rendimento' && mesDe(m.data) === mes)), fim);
   const r = taxaMensal(c);
   let valor;
   if (req.body?.valor !== undefined && req.body.valor !== '') valor = round2(req.body.valor);
-  else if (r === null) return erro(res, 400, 'Conta em modo manual: informe o valor do rendimento');
+  else if (r === null) return erro(res, 400, 'Conta em modo manual: informe o valor do rendimento', 'informe_valor');
   else valor = round2(Math.max(0, base) * r);
 
   const mov = await Movimento.create({
-    conta: c._id, tipo: 'rendimento', valor, data: fim, automatico: req.body?.valor === undefined,
-    descricao: r !== null && req.body?.valor === undefined ? `Rendimento ${mes} (${(r * 100).toFixed(4)}% sobre ${base.toFixed(2)})` : `Rendimento ${mes}`,
+    conta: c._id, tipo: 'rendimento', valor, data: fim, automatico: false, descricao: '',
   });
   res.status(201).json({ movimento: mov, base, taxaMensal: r });
 }));

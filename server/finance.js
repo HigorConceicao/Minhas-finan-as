@@ -197,6 +197,34 @@ export function metricasConta(conta, movimentos, hoje = new Date()) {
   };
 }
 
+/**
+ * Rendimentos automáticos devidos: um por mês já encerrado (último dia já chegou),
+ * a partir de `autoDesde`, sem repetir meses que já têm rendimento ou que foram apagados à mão.
+ * Calculados em sequência, para que cada mês renda sobre o saldo já com os juros anteriores.
+ */
+export function rendimentosAutomaticos(conta, movimentos, hoje = new Date()) {
+  if (!conta.rendimentoAutomatico) return [];
+  const r = taxaMensal(conta);
+  if (r === null) return [];
+  const desde = new Date(conta.autoDesde || conta.createdAt || conta.dataInicio).getTime();
+  const agora = new Date(hoje).getTime();
+  const ignorados = new Set(conta.rendimentoIgnorado || []);
+  const movs = [...movimentos];
+  const novos = [];
+  for (const m of mesesEntre(mesDe(conta.dataInicio), mesDe(hoje))) {
+    const fim = ultimoDiaDoMes(m);
+    if (fim.getTime() > agora) continue; // mês ainda não terminou
+    if (fim.getTime() < desde) continue; // antes de ligar o automático
+    if (ignorados.has(m)) continue;
+    if (movs.some((x) => x.tipo === 'rendimento' && mesDe(x.data) === m)) continue;
+    const base = saldoAte(conta, movs, fim);
+    const mov = { conta: conta._id, tipo: 'rendimento', valor: round2(Math.max(0, base) * r), data: fim, descricao: '', automatico: true };
+    movs.push(mov);
+    novos.push(mov);
+  }
+  return novos;
+}
+
 /** Meses em que uma recorrência deve gerar lançamento, até hoje (inclusive) */
 export function competenciasDevidas(rec, hoje = new Date()) {
   const ini = mesDe(rec.inicio);

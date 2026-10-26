@@ -71,6 +71,10 @@ export const ContaRendimento = model(
       modo: { type: String, enum: ['mensal', 'anual', 'manual'], default: 'mensal' },
       taxa: { type: Number, default: 0, min: 0 }, // % ao mês ou % ao ano, conforme o modo
       nota: { type: String, default: '' },
+      // lança o juro sozinho no último dia de cada mês (modos mensal/anual)
+      rendimentoAutomatico: { type: Boolean, default: true },
+      autoDesde: { type: Date, default: () => new Date() },
+      rendimentoIgnorado: { type: [String], default: [] }, // meses 'AAAA-MM' cujo rendimento foi apagado à mão
     },
     opts
   )

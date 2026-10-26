@@ -1,6 +1,6 @@
 // API simulada para a demonstração: roda no navegador, em memória, com os mesmos cálculos do servidor.
 import {
-  metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, SAIDAS,
+  metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, SAIDAS,
 } from '../../server/finance.js';
 
 const TAXAS = { EUR: 1, BRL: 6.2, USD: 1.08 };
@@ -16,7 +16,7 @@ const paraData = (v) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T12:00:00.000Z` : new Date(s).toISOString();
 };
 
-class Erro extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+class Erro extends Error { constructor(status, msg, codigo = null, dados) { super(msg); this.status = status; this.codigo = codigo; this.dados = dados; } }
 
 const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [] };
 
@@ -58,18 +58,26 @@ function semear() {
   }
 
   // conta de rendimento: 350 mil desde 6 meses atrás, 0,85% a.m.
-  const conta = add('contas', { nome: 'Reserva', instituicao: 'Banco', moeda: 'BRL', saldoInicial: 350000, dataInicio: dia(-6, 1), modo: 'mensal', taxa: 0.85, nota: '' });
+  const conta = add('contas', { nome: 'Reserva', instituicao: 'Banco', moeda: 'BRL', saldoInicial: 350000, dataInicio: dia(-6, 1), modo: 'mensal', taxa: 0.85, nota: '',
+    rendimentoAutomatico: true, autoDesde: dia(-6, 1), rendimentoIgnorado: [] });
   const saidas = { [-5]: [['resgate', 3000, 'Retirada'], ['imposto', 180, 'IR']], [-4]: [['resgate', 1500, 'Retirada']],
     [-3]: [['resgate', 4500, 'Viagem'], ['imposto', 210, 'IR']], [-2]: [['resgate', 2000, 'Retirada']],
     [-1]: [['resgate', 2500, 'Retirada'], ['taxa', 35, 'Tarifa']], [0]: [['resgate', 1800, 'Retirada']] };
+  // as saídas; os juros de cada mês fechado entram pelo lançamento automático
   for (let n = -6; n <= -1; n++) {
     for (const [tipo, valor, descricao] of saidas[n] || []) add('movimentos', { conta: conta._id, tipo, valor, data: dia(n, 10), descricao, automatico: false });
-    aplicarRendimento(conta._id, { mes: mes(n) });
   }
   if (hojeDia >= 10) for (const [tipo, valor, descricao] of saidas[0]) add('movimentos', { conta: conta._id, tipo, valor, data: dia(0, 10), descricao, automatico: false });
 }
 
 // ---------- regras ----------
+function sincronizar(conta) {
+  for (const mv of rendimentosAutomaticos(conta, db.movimentos.filter((x) => x.conta === conta._id))) {
+    db.movimentos.push({ ...mv, _id: novoId(), data: new Date(mv.data).toISOString(), createdAt: agoraISO() });
+  }
+}
+const sincronizarTodas = () => db.contas.forEach(sincronizar);
+
 function gerarRecorrentes(hoje = new Date()) {
   for (const rec of db.recorrentes.filter((r) => r.ativo)) {
     const devidas = competenciasDevidas(rec, hoje).filter((m) => !rec.ignoradas?.includes(m));
@@ -90,20 +98,18 @@ const limpar = (obj, campos) => Object.fromEntries(campos.filter((k) => obj[k] !
 function aplicarRendimento(id, body = {}) {
   const c = achar('contas', id);
   const mes = MES_RE.test(body.mes || '') ? body.mes : mesDe(new Date());
-  if (mes < mesDe(c.dataInicio)) throw new Erro(400, 'Mês anterior ao início da conta');
+  if (mes < mesDe(c.dataInicio)) throw new Erro(400, 'Mês anterior ao início da conta', 'mes_anterior_inicio');
   const movs = db.movimentos.filter((m) => m.conta === id);
-  if (movs.some((m) => m.tipo === 'rendimento' && mesDe(m.data) === mes) && !body.forcar) throw new Erro(409, 'Já existe rendimento lançado neste mês');
+  if (movs.some((m) => m.tipo === 'rendimento' && mesDe(m.data) === mes) && !body.forcar) throw new Erro(409, 'Já existe rendimento lançado neste mês', 'rendimento_duplicado');
   const fim = ultimoDiaDoMes(mes);
   const base = saldoAte(c, movs.filter((m) => !(m.tipo === 'rendimento' && mesDe(m.data) === mes)), fim);
   const r = taxaMensal(c);
   let valor;
   if (body.valor !== undefined && body.valor !== '') valor = round2(body.valor);
-  else if (r === null) throw new Erro(400, 'Conta em modo manual: informe o valor do rendimento');
+  else if (r === null) throw new Erro(400, 'Conta em modo manual: informe o valor do rendimento', 'informe_valor');
   else valor = round2(Math.max(0, base) * r);
   const mov = {
-    _id: novoId(), conta: id, tipo: 'rendimento', valor, data: fim.toISOString(), automatico: body.valor === undefined,
-    descricao: r !== null && body.valor === undefined ? `Rendimento ${mes} (${(r * 100).toFixed(4)}% sobre ${base.toFixed(2)})` : `Rendimento ${mes}`,
-    createdAt: agoraISO(),
+    _id: novoId(), conta: id, tipo: 'rendimento', valor, data: fim.toISOString(), automatico: false, descricao: '', createdAt: agoraISO(),
   };
   db.movimentos.push(mov);
   return { movimento: mov, base, taxaMensal: r };
@@ -111,6 +117,7 @@ function aplicarRendimento(id, body = {}) {
 
 function resumo(q) {
   gerarRecorrentes();
+  sincronizarTodas();
   const mes = MES_RE.test(q.get('mes') || '') ? q.get('mes') : mesDe(new Date());
   const base = ['EUR', 'BRL', 'USD'].includes(q.get('base')) ? q.get('base') : 'EUR';
   const conv = (v, m) => converter(v, m, base);
@@ -172,7 +179,7 @@ const CAMPOS = {
   categorias: ['nome', 'tipo', 'cor', 'icone', 'orcamentoMensal', 'moeda', 'alertaPct'],
   lancamentos: ['tipo', 'descricao', 'valor', 'moeda', 'data', 'categoria', 'nota'],
   recorrentes: ['tipo', 'descricao', 'valor', 'moeda', 'categoria', 'frequencia', 'diaDoMes', 'inicio', 'fim', 'ativo'],
-  contas: ['nome', 'instituicao', 'moeda', 'saldoInicial', 'dataInicio', 'modo', 'taxa', 'nota'],
+  contas: ['nome', 'instituicao', 'moeda', 'saldoInicial', 'dataInicio', 'modo', 'taxa', 'nota', 'rendimentoAutomatico'],
   movimentos: ['tipo', 'valor', 'data', 'descricao'],
 };
 const DATAS = ['data', 'inicio', 'fim', 'dataInicio'];
@@ -232,24 +239,33 @@ function rotear(method, path, q, body) {
 
   if (a === 'contas') {
     if (!id) {
+      if (M === 'GET') { sincronizarTodas(); } // segue para montar a lista
       if (M === 'GET') return db.contas.map((c) => {
         const m = metricasConta(c, db.movimentos.filter((x) => x.conta === c._id));
         return { ...c, saldoAtual: m.saldoAtual, jurosMes: m.mes.juros, saidasMes: m.mes.saidas, rendimentoLancado: m.mes.rendimentoLancado };
       });
-      if (M === 'POST') { const d = { _id: novoId(), instituicao: '', moeda: 'BRL', modo: 'mensal', taxa: 0, nota: '', ...normalizar(a, body), createdAt: agoraISO() }; db.contas.push(d); return d; }
+      if (M === 'POST') {
+        const d = { _id: novoId(), instituicao: '', moeda: 'BRL', modo: 'mensal', taxa: 0, nota: '', rendimentoAutomatico: true, rendimentoIgnorado: [], ...normalizar(a, body), createdAt: agoraISO() };
+        d.autoDesde = body?.incluirAnteriores && d.dataInicio ? d.dataInicio : agoraISO();
+        db.contas.push(d); sincronizar(d); return d;
+      }
     }
     if (!sub) {
-      if (M === 'PUT') return Object.assign(achar(a, id), normalizar(a, body));
+      if (M === 'PUT') {
+        const c = achar(a, id); const d = normalizar(a, body);
+        if (d.rendimentoAutomatico && !c.rendimentoAutomatico) d.autoDesde = agoraISO();
+        return Object.assign(c, d);
+      }
       if (M === 'DELETE') { db.movimentos = db.movimentos.filter((m) => m.conta !== id); db.contas = db.contas.filter((x) => x._id !== id); return null; }
     }
-    if (sub === 'metricas') { const c = achar('contas', id); return { conta: c, ...metricasConta(c, db.movimentos.filter((x) => x.conta === id)) }; }
+    if (sub === 'metricas') { const c = achar('contas', id); sincronizar(c); return { conta: c, ...metricasConta(c, db.movimentos.filter((x) => x.conta === id)) }; }
     if (sub === 'movimentos' && M === 'GET') return db.movimentos.filter((m) => m.conta === id).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
     if (sub === 'movimentos' && M === 'POST') {
       const c = achar('contas', id);
       const d = normalizar('movimentos', body);
       if (SAIDAS.includes(d.tipo)) {
         const saldo = saldoAte(c, db.movimentos.filter((m) => m.conta === id), new Date(8640000000000000));
-        if (d.valor > saldo) throw new Erro(400, `Saída maior que o saldo disponível (${saldo.toFixed(2)})`);
+        if (d.valor > saldo) throw new Erro(400, `Saída maior que o saldo disponível (${saldo.toFixed(2)})`, 'saida_maior_saldo', { saldo, moeda: c.moeda });
       }
       const mov = { _id: novoId(), conta: id, descricao: '', automatico: false, ...d, createdAt: agoraISO() };
       db.movimentos.push(mov); return mov;
@@ -259,7 +275,11 @@ function rotear(method, path, q, body) {
 
   if (a === 'movimentos') {
     if (M === 'PUT') return Object.assign(achar(a, id), normalizar(a, body));
-    if (M === 'DELETE') { db.movimentos = db.movimentos.filter((x) => x._id !== id); return null; }
+    if (M === 'DELETE') {
+      const mv = db.movimentos.find((x) => x._id === id);
+      if (mv?.tipo === 'rendimento') { const c = db.contas.find((x) => x._id === mv.conta); if (c && !c.rendimentoIgnorado.includes(mesDe(mv.data))) c.rendimentoIgnorado.push(mesDe(mv.data)); }
+      db.movimentos = db.movimentos.filter((x) => x._id !== id); return null;
+    }
   }
 
   throw new Erro(404, 'Rota não encontrada');
@@ -283,7 +303,7 @@ export function instalarDemo() {
     } catch (e) {
       const status = e.status || 500;
       if (status === 500) console.error(e);
-      return new Response(JSON.stringify({ erro: e.message }), { status, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({ erro: e.message, codigo: e.codigo || (status === 500 ? 'erro_interno' : null), dados: e.dados }), { status, headers: { 'content-type': 'application/json' } });
     }
   };
 }
