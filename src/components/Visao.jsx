@@ -41,20 +41,7 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
         </button>
       </section>
 
-      {atencao.length > 0 && (
-        <section className="cartao p-5">
-          <p className="mb-3 flex items-center gap-2 font-bold"><span className="grid h-8 w-8 place-items-center rounded-full bg-aviso-suave text-aviso"><Icone nome="alerta" className="h-4 w-4" forte /></span>{t('visao.atencao')}</p>
-          <ul className="space-y-2 text-sm">
-            {atencao.map((o) => (
-              <li key={o.categoria} className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2"><span>{o.icone}</span>{o.nome}</span>
-                <span className={`num font-semibold ${o.estado === 'estourado' ? 'text-neg' : 'text-aviso'}`}>{pct(o.pct, 0)} · {dinheiro(o.gasto, base)} / {dinheiro(o.limite, base)}</span>
-              </li>
-            ))}
-          </ul>
-          <button className="mt-3 text-sm font-semibold text-marca" onClick={() => irPara('orcamento')}>{t('visao.verOrcamento')}</button>
-        </section>
-      )}
+      {atencao.length > 0 && <CartaoAtencao itens={atencao} base={base} aoAbrir={() => irPara('orcamento')} />}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="cartao p-5">
@@ -138,5 +125,63 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
         {t('visao.cambio', { base, fonte: resumo.cambio.fonte === 'BCE' ? t('visao.cambioBce', { data: resumo.cambio.data }) : t('visao.cambioAprox') })}
       </p>
     </div>
+  );
+}
+
+/** Categorias perto ou acima do limite do orçamento, em formato de tabela compacta */
+function CartaoAtencao({ itens, base, aoAbrir }) {
+  const t = useT();
+  const lista = [...itens].map((o) => ({ ...o, excesso: Math.max(0, o.gasto - o.limite), sit: o.gasto > o.limite + 0.004 ? 'acima' : o.gasto >= o.limite - 0.004 ? 'limite' : 'perto' }))
+    .sort((a, b) => b.pct - a.pct);
+  const excessoTotal = lista.reduce((s, o) => s + o.excesso, 0);
+  const ESTILO = {
+    acima: { chip: 'bg-neg-suave text-neg', barra: 'bg-neg' },
+    limite: { chip: 'bg-aviso-suave text-aviso', barra: 'bg-aviso' },
+    perto: { chip: 'bg-sutil text-texto-2', barra: 'bg-aviso' },
+  };
+  return (
+    <section className="cartao overflow-hidden">
+      <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-aviso-suave text-aviso"><Icone nome="alerta" className="h-5 w-5" forte /></span>
+          <div>
+            <h3 className="text-base">{t('visao.atencao')}</h3>
+            <p className="text-xs text-texto-3">
+              {lista.length === 1 ? t('visao.atencaoSub1') : t('visao.atencaoSub', { n: lista.length })}
+              {excessoTotal > 0 && <> · <span className="num font-semibold text-neg">{t('visao.excessoTotal', { v: dinheiro(excessoTotal, base) })}</span></>}
+            </p>
+          </div>
+        </div>
+        <button className="shrink-0 text-sm font-semibold text-marca" onClick={aoAbrir}>{t('visao.verOrcamento')}</button>
+      </div>
+      <ul className="divide-y divide-linha border-t border-linha">
+        {lista.map((o) => {
+          const e = ESTILO[o.sit];
+          return (
+            <li key={o.categoria}>
+              <button className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-3 px-5 py-3.5 text-left hover:bg-sutil/60" onClick={aoAbrir}>
+                <IconeCategoria cor={o.cor} icone={o.icone} tamanho="h-9 w-9 text-sm" />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-sm font-semibold">{o.nome}</span>
+                    <span className={`chip shrink-0 px-2 py-0.5 text-[11px] ${e.chip}`}>{t(`visao.sit.${o.sit}`)}</span>
+                  </span>
+                  <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-sutil">
+                    <span className={`block h-full rounded-full ${e.barra}`} style={{ width: `${Math.min(100, o.pct)}%` }} />
+                  </span>
+                </span>
+                <span className="text-right">
+                  <span className="num block text-sm font-bold">{dinheiro(o.gasto, base)}</span>
+                  <span className="num block text-xs text-texto-3">
+                    {o.excesso > 0 ? <span className="font-semibold text-neg">+{dinheiro(o.excesso, base)}</span> : `${pct(o.pct, 0)}`}
+                    {' · '}{t('visao.deLimite', { v: dinheiro(o.limite, base) })}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

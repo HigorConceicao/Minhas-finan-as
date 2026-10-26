@@ -391,6 +391,10 @@ en.imp = {
   semCategoria: 'No category', sugerida: 'suggested',
 };
 
+Object.assign(pt.visao, { atencaoSub: '{n} categorias perto ou acima do limite', atencaoSub1: '1 categoria perto ou acima do limite', excessoTotal: '{v} acima do previsto', deLimite: 'de {v}', sit: { acima: 'Acima', limite: 'No limite', perto: 'Perto do limite' }, verOrcamento: 'Ver orçamento' });
+Object.assign(de.visao, { atencaoSub: '{n} Kategorien nahe am oder über dem Limit', atencaoSub1: '1 Kategorie nahe am oder über dem Limit', excessoTotal: '{v} über Plan', deLimite: 'von {v}', sit: { acima: 'Überschritten', limite: 'Am Limit', perto: 'Fast am Limit' }, verOrcamento: 'Zum Budget' });
+Object.assign(en.visao, { atencaoSub: '{n} categories near or over limit', atencaoSub1: '1 category near or over limit', excessoTotal: '{v} over plan', deLimite: 'of {v}', sit: { acima: 'Over', limite: 'At limit', perto: 'Near limit' }, verOrcamento: 'See budget' });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
