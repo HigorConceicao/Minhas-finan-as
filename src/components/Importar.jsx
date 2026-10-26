@@ -5,6 +5,7 @@ import { useT } from '../i18n.js';
 import { chaveRegra, decodificar, EXEMPLO_SPARKASSE, interpretarExtrato, sugerirCategoria } from '../importacao.js';
 import { Campo, Carregando, Modal, useAviso } from './ui.jsx';
 import Icone from './Icones.jsx';
+import { useDados } from '../dados.jsx';
 
 const DEMO = import.meta.env.MODE === 'demo';
 
@@ -17,6 +18,8 @@ export default function Importar({ aberto, aoFechar, categorias, aoImportar }) {
   const [linhas, setLinhas] = useState([]); // { ...lanc, marcado, categoria, sugerida, ja, talvez }
   const [moeda, setMoeda] = useState('EUR');
   const [lembrar, setLembrar] = useState(true);
+  const { contasAtivas } = useDados();
+  const [conta, setConta] = useState('');
   const [estado, setEstado] = useState('arquivo'); // arquivo | lendo | previa | importando
   const [erro, setErro] = useState('');
   const [arrastando, setArrastando] = useState(false);
@@ -79,7 +82,7 @@ export default function Importar({ aberto, aoFechar, categorias, aoImportar }) {
     try {
       const r = await post('/importar', {
         linhas: marcados.map(({ importId, data, tipo, valor, descricao, nota, categoria, moeda: m }) => ({ importId, data, tipo, valor, descricao, nota, categoria: categoria || null, moeda: m || moeda })),
-        regras,
+        regras, conta: conta || null,
       });
       avisar(t('imp.importados', { n: r.criados }));
       const ultimoMes = marcados.map((l) => l.data.slice(0, 7)).sort().at(-1);
@@ -146,6 +149,14 @@ export default function Importar({ aberto, aoFechar, categorias, aoImportar }) {
 
           {!linhas.length && <p className="rounded-2xl bg-aviso-suave p-4 text-sm">{t('imp.nenhuma')}</p>}
 
+          {contasAtivas.length > 0 && (
+            <Campo rotulo={t('lanc.conta')}>
+              <select id="imp-conta" className="campo" value={conta} onChange={(e) => { setConta(e.target.value); const c = contasAtivas.find((x) => x._id === e.target.value); if (c) setMoeda(c.moeda); }}>
+                <option value="">{t('lanc.semConta')}</option>
+                {contasAtivas.filter((c) => ['corrente', 'cartao', 'dinheiro'].includes(c.tipo)).map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
+              </select>
+            </Campo>
+          )}
           <details className="rounded-2xl bg-sutil p-4" open={!linhas.length}>
             <summary className="cursor-pointer text-sm font-semibold">{t('imp.colunas')}</summary>
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">

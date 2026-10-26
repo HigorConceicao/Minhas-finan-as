@@ -4,6 +4,7 @@ import { dataCurta, dinheiro, hojeISO, lerNumero, paraCampo, paraInput } from '.
 import { useT } from '../i18n.js';
 import { Campo, Carregando, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
 import Icone from './Icones.jsx';
+import { useDados } from '../dados.jsx';
 
 export default function Recorrentes({ categorias, aoMudar }) {
   const t = useT();
@@ -89,12 +90,13 @@ function FormRecorrente({ aberto, item, categorias, aoFechar, aoSalvar, aoApagar
   const novo = !item?._id;
   const [f, setF] = useState({});
   const [apagando, setApagando] = useState(false);
+  const { contasAtivas } = useDados();
   useEffect(() => {
     if (!aberto) return;
     setApagando(false);
     setF(item?._id
-      ? { ...item, valor: paraCampo(item.valor), inicio: paraInput(item.inicio), fim: paraInput(item.fim), categoria: item.categoria || '' }
-      : { tipo: 'despesa', descricao: '', valor: '', moeda: 'EUR', categoria: '', frequencia: 'mensal', diaDoMes: new Date().getDate(), inicio: hojeISO(), fim: '', ativo: true });
+      ? { ...item, valor: paraCampo(item.valor), inicio: paraInput(item.inicio), fim: paraInput(item.fim), categoria: item.categoria || '', conta: item.conta || '' }
+      : { tipo: 'despesa', descricao: '', valor: '', moeda: 'EUR', categoria: '', conta: '', frequencia: 'mensal', diaDoMes: new Date().getDate(), inicio: hojeISO(), fim: '', ativo: true });
   }, [aberto, item]);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
 
@@ -105,7 +107,7 @@ function FormRecorrente({ aberto, item, categorias, aoFechar, aoSalvar, aoApagar
     if (!f.descricao?.trim()) return avisar(t('rec.descreva'), 'erro');
     if (!(valor > 0)) return avisar(t('lanc.informeValor'), 'erro');
     if (!(dia >= 1 && dia <= 31)) return avisar(t('rec.diaInvalido'), 'erro');
-    const corpo = { tipo: f.tipo, descricao: f.descricao, valor, moeda: f.moeda, categoria: f.categoria || null, frequencia: f.frequencia, diaDoMes: dia, inicio: f.inicio, fim: f.fim || null, ativo: f.ativo };
+    const corpo = { tipo: f.tipo, descricao: f.descricao, valor, moeda: f.moeda, categoria: f.categoria || null, conta: f.conta || null, frequencia: f.frequencia, diaDoMes: dia, inicio: f.inicio, fim: f.fim || null, ativo: f.ativo };
     try { novo ? await post('/recorrentes', corpo) : await put(`/recorrentes/${item._id}`, corpo); aoSalvar(); }
     catch (err) { avisar(err.message, 'erro'); }
   };
@@ -133,6 +135,14 @@ function FormRecorrente({ aberto, item, categorias, aoFechar, aoSalvar, aoApagar
             {categorias.filter((c) => c.tipo === f.tipo).map((c) => <option key={c._id} value={c._id}>{c.icone} {c.nome}</option>)}
           </select>
         </Campo>
+        {contasAtivas.length > 0 && (
+          <Campo rotulo={t('lanc.conta')}>
+            <select id="rec-conta" className="campo" value={f.conta || ''} onChange={(e) => { const c = contasAtivas.find((x) => x._id === e.target.value); setF((x) => ({ ...x, conta: e.target.value, moeda: c?.moeda || x.moeda })); }}>
+              <option value="">{t('lanc.semConta')}</option>
+              {contasAtivas.filter((c) => c.tipo !== 'investimento').map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
+            </select>
+          </Campo>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Campo rotulo={t('rec.comeca')} dica={t('rec.comecaDica')}><input id="rec-inicio" type="date" className="campo" value={f.inicio || ''} onChange={set('inicio')} /></Campo>
           <Campo rotulo={t('rec.termina')}><input id="rec-fim" type="date" className="campo" value={f.fim || ''} onChange={set('fim')} /></Campo>

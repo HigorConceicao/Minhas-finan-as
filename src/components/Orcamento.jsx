@@ -127,7 +127,7 @@ function FormCategoria({ aberto, cat, base, aoFechar, aoSalvar, aoApagar }) {
     if (!f.nome?.trim()) return avisar(t('orc.deNome'), 'erro');
     const orc = f.orcamentoMensal === '' ? 0 : lerNumero(f.orcamentoMensal);
     if (!(orc >= 0)) return avisar(t('orc.invalido'), 'erro');
-    const corpo = { nome: f.nome, tipo: f.tipo, icone: f.icone || '•', cor: f.cor, orcamentoMensal: orc, moeda: f.moeda, alertaPct: Number(f.alertaPct) || 80 };
+    const corpo = { nome: f.nome, tipo: f.tipo, icone: f.icone || '•', cor: f.cor, orcamentoMensal: orc, moeda: f.moeda, alertaPct: Number(f.alertaPct) || 80, dedutivel: !!f.dedutivel };
     try { novo ? await post('/categorias', corpo) : await put(`/categorias/${cat._id}`, corpo); aoSalvar(); }
     catch (err) { avisar(err.message, 'erro'); }
   };
@@ -157,6 +157,10 @@ function FormCategoria({ aberto, cat, base, aoFechar, aoSalvar, aoApagar }) {
             <Campo rotulo={t('orc.avisarEm', { p: f.alertaPct })}>
               <input id="cat-alerta" type="range" min="50" max="100" step="5" value={f.alertaPct || 80} onChange={set('alertaPct')} className="w-full accent-[rgb(var(--marca))]" />
             </Campo>
+            <label htmlFor="cat-dedutivel" className="flex cursor-pointer items-start gap-3 rounded-2xl bg-sutil p-4">
+              <input id="cat-dedutivel" type="checkbox" checked={!!f.dedutivel} onChange={(e) => setF((x) => ({ ...x, dedutivel: e.target.checked }))} className="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--marca))]" />
+              <span><span className="block text-sm font-semibold">{t('orc.dedutivel')}</span><span className="block text-xs text-texto-3">{t('orc.dedutivelDica')}</span></span>
+            </label>
           </>
         )}
         <div className="flex flex-wrap justify-between gap-2 pt-2">

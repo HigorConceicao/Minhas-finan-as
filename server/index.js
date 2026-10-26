@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import api from './routes.js';
 import { Categoria } from './models.js';
+import { iniciarLembretes } from './lembretes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -64,7 +65,7 @@ if (fs.existsSync(dist)) {
 }
 
 conectar()
-  .then(() => app.listen(PORT, () => console.log(`Minhas Finanças v2 rodando na porta ${PORT}`)))
+  .then(() => { iniciarLembretes(); app.listen(PORT, () => console.log(`Minhas Finanças v2 rodando na porta ${PORT}`)); })
   .catch((e) => {
     console.error('Falha ao conectar no MongoDB:', e.message);
     process.exit(1);

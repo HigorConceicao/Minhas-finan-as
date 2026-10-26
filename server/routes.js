@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
-import { Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria } from './models.js';
+import {
+  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem,
+} from './models.js';
+import {
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes,
+} from './contas.js';
+import { chavePublica, inscrever, cancelarInscricao, enviarTeste } from './lembretes.js';
 import {
   metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
 } from './finance.js';
-import { obterTaxas, converter } from './cambio.js';
+import { obterTaxas, converter, conversorPorDia, taxasNaData } from './cambio.js';
 
 const api = Router();
 
@@ -55,7 +61,7 @@ export async function gerarRecorrentes(hoje = new Date()) {
     const novos = devidas
       .filter((m) => !existentes.has(m))
       .map((m) => ({
-        tipo: rec.tipo, descricao: rec.descricao, valor: rec.valor, moeda: rec.moeda, categoria: rec.categoria,
+        tipo: rec.tipo, descricao: rec.descricao, valor: rec.valor, moeda: rec.moeda, categoria: rec.categoria, conta: rec.conta || null,
         data: diaNoMes(m, rec.diaDoMes), recorrente: rec._id, competencia: m,
       }));
     if (novos.length) {
@@ -86,8 +92,8 @@ const sincronizarTodas = async () => {
 api.get('/cambio', wrap(async (_req, res) => res.json(await obterTaxas())));
 
 // ---------- categorias ----------
-const camposCategoria = ({ nome, tipo, cor, icone, orcamentoMensal, moeda, alertaPct }) =>
-  Object.fromEntries(Object.entries({ nome, tipo, cor, icone, orcamentoMensal, moeda, alertaPct }).filter(([, v]) => v !== undefined));
+const camposCategoria = ({ nome, tipo, cor, icone, orcamentoMensal, moeda, alertaPct, dedutivel }) =>
+  Object.fromEntries(Object.entries({ nome, tipo, cor, icone, orcamentoMensal, moeda, alertaPct, dedutivel }).filter(([, v]) => v !== undefined));
 
 api.get('/categorias', wrap(async (_req, res) => res.json(await Categoria.find().sort({ tipo: 1, nome: 1 }))));
 api.post('/categorias', wrap(async (req, res) => res.status(201).json(await Categoria.create(camposCategoria(req.body)))));
@@ -106,11 +112,35 @@ api.delete('/categorias/:id', wrap(async (req, res) => {
 }));
 
 // ---------- lançamentos ----------
-const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota }) =>
-  Object.fromEntries(
-    Object.entries({ tipo, descricao, valor: valor === undefined ? undefined : round2(valor), moeda, data, categoria: categoria || (categoria === undefined ? undefined : null), nota })
-      .filter(([, v]) => v !== undefined)
-  );
+const idOuNulo = (v) => (v === undefined ? undefined : v && validarId(v) ? v : null);
+const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota, conta, contaDestino, valorDestino, valorConta, fatura, ajuste, viagem }) => {
+  const d = Object.fromEntries(Object.entries({
+    tipo, descricao, valor: valor === undefined ? undefined : round2(valor), moeda, data, categoria: idOuNulo(categoria), nota,
+    conta: idOuNulo(conta), contaDestino: idOuNulo(contaDestino), viagem: idOuNulo(viagem),
+    valorDestino: valorDestino === undefined ? undefined : valorDestino === null || valorDestino === '' ? null : round2(valorDestino),
+    valorConta: valorConta === undefined ? undefined : valorConta === null || valorConta === '' ? null : round2(valorConta),
+    fatura: fatura === undefined ? undefined : fatura || null, ajuste,
+  }).filter(([, v]) => v !== undefined));
+  if (d.tipo === 'transferencia') { d.categoria = null; d.viagem = null; d.valorConta = null; }
+  else if (d.tipo) { d.contaDestino = null; d.valorDestino = null; d.fatura = null; }
+  return d;
+};
+/** Compra em moeda diferente da conta: sem valor informado, converte pelo câmbio do dia da compra */
+async function definirValorConta(docs) {
+  const cache = new Map();
+  for (const d of docs) {
+    if (d.tipo === 'transferencia' || !d.conta || !d.moeda) continue;
+    const k = String(d.conta);
+    if (!cache.has(k)) cache.set(k, (await Conta.findById(k, 'moeda').lean())?.moeda || null);
+    const mc = cache.get(k);
+    if (!mc || mc === d.moeda) { d.valorConta = null; continue; }
+    if (d.valorConta != null) continue;
+    const dia = new Date(d.data || Date.now()).toISOString().slice(0, 10);
+    d.valorConta = round2(converter(Number(d.valor), d.moeda, mc, await taxasNaData(dia)));
+  }
+  return docs;
+}
+const validarTransferencia = (d) => d.tipo !== 'transferencia' || (d.conta && d.contaDestino && String(d.conta) !== String(d.contaDestino));
 
 api.get('/lancamentos', wrap(async (req, res) => {
   await gerarRecorrentes();
@@ -120,17 +150,39 @@ api.get('/lancamentos', wrap(async (req, res) => {
     filtro.data = intervaloDoMes(req.query.mes);
   }
   if (req.query.categoria && validarId(req.query.categoria)) filtro.categoria = req.query.categoria;
+  if (req.query.conta && validarId(req.query.conta)) filtro.$or = [{ conta: req.query.conta }, { contaDestino: req.query.conta }];
+  if (req.query.viagem && validarId(req.query.viagem)) filtro.viagem = req.query.viagem;
   res.json(await Lancamento.find(filtro).sort({ data: -1, createdAt: -1 }).limit(2000));
 }));
-api.post('/lancamentos', wrap(async (req, res) => res.status(201).json(await Lancamento.create(camposLancamento(req.body)))));
+api.post('/lancamentos', wrap(async (req, res) => {
+  const dados = camposLancamento(req.body);
+  if (!validarTransferencia(dados)) return erro(res, 400, 'Escolha as duas contas da transferência', 'transferencia_contas');
+  const parcelas = Math.floor(Number(req.body?.parcelas) || 1);
+  if (parcelas > 1 && dados.tipo === 'despesa') {
+    await definirValorConta([dados]);
+    const docs = gerarParcelas({ ...dados, data: new Date(dados.data).toISOString() }, parcelas, crypto.randomUUID());
+    const criados = await Lancamento.insertMany(docs);
+    return res.status(201).json(criados[0]);
+  }
+  await definirValorConta([dados]);
+  res.status(201).json(await Lancamento.create(dados));
+}));
 api.put('/lancamentos/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  const l = await Lancamento.findByIdAndUpdate(req.params.id, camposLancamento(req.body), { new: true, runValidators: true });
+  const dados = camposLancamento(req.body);
+  if (!validarTransferencia(dados)) return erro(res, 400, 'Escolha as duas contas da transferência', 'transferencia_contas');
+  if (dados.conta !== undefined || dados.valor !== undefined || dados.moeda !== undefined) {
+    const atual = await Lancamento.findById(req.params.id).lean();
+    if (atual) { const junto = { ...atual, ...dados }; await definirValorConta([junto]); dados.valorConta = junto.valorConta ?? null; }
+  }
+  const l = await Lancamento.findByIdAndUpdate(req.params.id, dados, { new: true, runValidators: true });
   l ? res.json(l) : erro(res, 404, 'Lançamento não encontrado');
 }));
 api.delete('/lancamentos/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const l = await Lancamento.findByIdAndDelete(req.params.id);
+  // compra parcelada: ?todas=1 apaga também as outras parcelas
+  if (l?.parcela?.grupo && req.query.todas === '1') await Lancamento.deleteMany({ 'parcela.grupo': l.parcela.grupo });
   if (l?.recorrente && l.competencia) {
     await Recorrente.updateOne({ _id: l.recorrente }, { $addToSet: { ignoradas: l.competencia } });
   }
@@ -138,11 +190,11 @@ api.delete('/lancamentos/:id', wrap(async (req, res) => {
 }));
 
 // ---------- recorrentes ----------
-const camposRecorrente = ({ tipo, descricao, valor, moeda, categoria, frequencia, diaDoMes, inicio, fim, ativo }) =>
+const camposRecorrente = ({ tipo, descricao, valor, moeda, categoria, conta, frequencia, diaDoMes, inicio, fim, ativo }) =>
   Object.fromEntries(
     Object.entries({
       tipo, descricao, valor: valor === undefined ? undefined : round2(valor), moeda,
-      categoria: categoria || (categoria === undefined ? undefined : null),
+      categoria: categoria || (categoria === undefined ? undefined : null), conta: idOuNulo(conta),
       frequencia, diaDoMes, inicio, fim: fim || (fim === undefined ? undefined : null), ativo,
     }).filter(([, v]) => v !== undefined)
   );
@@ -206,6 +258,7 @@ api.get('/resumo', wrap(async (req, res) => {
   const porCat = new Map();
   const fixoPorCat = new Map(); // parte vinda de recorrentes (não entra na projeção por ritmo)
   for (const l of lancs) {
+    if (l.tipo === 'transferencia' || l.ajuste) continue; // só movem dinheiro entre contas
     const v = conv(l.valor, l.moeda);
     if (l.tipo === 'receita') receitas += v; else despesas += v;
     const k = l.categoria ? String(l.categoria) : 'sem';
@@ -250,9 +303,16 @@ api.get('/resumo', wrap(async (req, res) => {
   }));
 
   const metasResumo = await resumoMetas();
+  const dadosCarteira = await carregarCarteira();
+  const pat = patrimonio({ ...dadosCarteira, conv });
+  const proximos = lembretes({
+    recorrentes: await Recorrente.find({ ativo: true }).lean(), cartoes: dadosCarteira.contas.filter((c) => c.tipo === 'cartao' && !c.arquivada),
+    lancamentos: dadosCarteira.lancamentos, orcamentos: [], hoje, dias: 7,
+  });
 
   res.json({
     mes, base, cambio: { fonte, data: dataCambio, taxas }, metas: metasResumo,
+    patrimonio: { ativos: pat.ativos, passivos: pat.passivos, liquido: pat.liquido }, temContas: dadosCarteira.contas.length > 0, proximos,
     receitas: round2(receitas), despesas: round2(despesas), saldo: round2(receitas - despesas),
     quantidade: lancs.length,
     orcamentos, semCategoria, totalOrcado, gastoOrcado, fracaoDoMes: round2(fracao),
@@ -489,12 +549,14 @@ api.post('/importar', wrap(async (req, res) => {
     tipo: l.tipo === 'receita' ? 'receita' : 'despesa', descricao: String(l.descricao || '—').slice(0, 120), valor: round2(Math.abs(Number(l.valor))),
     moeda: ['EUR', 'BRL', 'USD'].includes(l.moeda) ? l.moeda : 'EUR', data: new Date(`${l.data}T12:00:00Z`),
     categoria: validarId(l.categoria) ? l.categoria : null, nota: String(l.nota || '').slice(0, 200), importId: String(l.importId),
+    conta: validarId(req.body?.conta) ? req.body.conta : null,
   })).filter((d) => d.valor > 0 && !Number.isNaN(d.data.getTime()));
   // não importa de novo o que já existe (o índice único também protege, mas a checagem deixa a contagem certa)
   const existentes = new Set((await Lancamento.find({ importId: { $in: docs.map((d) => d.importId) } }, 'importId').lean()).map((l) => l.importId));
   const vistos = new Set();
   const total = docs.length;
   docs = docs.filter((d) => !existentes.has(d.importId) && !vistos.has(d.importId) && vistos.add(d.importId));
+  await definirValorConta(docs);
   let criados = 0;
   if (docs.length) try {
     criados = (await Lancamento.insertMany(docs, { ordered: false })).length;
@@ -510,14 +572,176 @@ api.post('/importar', wrap(async (req, res) => {
   res.status(201).json({ criados, ignorados: total - criados, regras: regras.length });
 }));
 
+// ---------- contas, cartões e patrimônio ----------
+async function carregarCarteira() {
+  const [contas, contasRend, movsRend] = await Promise.all([Conta.find().sort({ createdAt: 1 }).lean(), ContaRendimento.find().lean(), Movimento.find().lean()]);
+  const ids = contas.map((c) => c._id);
+  const lancamentos = ids.length ? await Lancamento.find({ $or: [{ conta: { $in: ids } }, { contaDestino: { $in: ids } }] }).lean() : [];
+  return { contas, contasRend, movsRend, lancamentos };
+}
+const camposConta2 = ({ nome, tipo, instituicao, moeda, saldoInicial, dataInicio, cor, arquivada, limite, diaFechamento, diaVencimento, contaPagamento }) =>
+  Object.fromEntries(Object.entries({
+    nome, tipo, instituicao, moeda, saldoInicial: saldoInicial === undefined ? undefined : round2(saldoInicial), dataInicio, cor, arquivada,
+    limite: limite === undefined ? undefined : round2(limite), diaFechamento, diaVencimento, contaPagamento: idOuNulo(contaPagamento),
+  }).filter(([, v]) => v !== undefined));
+
+api.get('/carteira', wrap(async (req, res) => {
+  await sincronizarTodas();
+  const base = ['EUR', 'BRL', 'USD'].includes(req.query.base) ? req.query.base : 'EUR';
+  const { taxas } = await obterTaxas();
+  const conv = (v, m) => converter(v, m, base, taxas);
+  const dados = await carregarCarteira();
+  const hoje = new Date();
+  const contas = dados.contas.map((c) => {
+    const saldo = saldoConta(c, dados.lancamentos);
+    return { ...c, saldo, saldoBase: round2(conv(saldo, c.moeda)), cartao: c.tipo === 'cartao' ? resumoCartao(c, dados.lancamentos, hoje) : undefined };
+  });
+  const rendimento = await Promise.all(dados.contasRend.map(async (c) => {
+    const movs = dados.movsRend.filter((m) => String(m.conta) === String(c._id));
+    const m = metricasConta(c, movs);
+    return { _id: c._id, nome: c.nome, instituicao: c.instituicao, moeda: c.moeda, saldo: m.saldoAtual, saldoBase: round2(conv(m.saldoAtual, c.moeda)), jurosMes: m.mes.juros };
+  }));
+  const pat = patrimonio({ ...dados, conv, ate: hoje });
+  res.json({ base, contas, rendimento, patrimonio: pat, serie: seriePatrimonio({ ...dados, conv }, 12, hoje) });
+}));
+api.post('/carteira', wrap(async (req, res) => {
+  const dados = camposConta2(req.body);
+  if (dados.tipo === 'divida' && dados.saldoInicial > 0) dados.saldoInicial = -dados.saldoInicial; // "valor devido" vira saldo negativo
+  if (dados.tipo === 'cartao' && dados.saldoInicial > 0) dados.saldoInicial = -dados.saldoInicial;
+  res.status(201).json(await Conta.create(dados));
+}));
+api.put('/carteira/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const antes = await Conta.findById(req.params.id).lean();
+  if (!antes) return erro(res, 404, 'Conta não encontrada');
+  const dados = camposConta2(req.body);
+  const tipo = dados.tipo || antes.tipo;
+  if ((tipo === 'divida' || tipo === 'cartao') && dados.saldoInicial > 0) dados.saldoInicial = -dados.saldoInicial;
+  res.json(await Conta.findByIdAndUpdate(req.params.id, dados, { new: true, runValidators: true }));
+}));
+api.delete('/carteira/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const usados = await Lancamento.countDocuments({ $or: [{ conta: req.params.id }, { contaDestino: req.params.id }] });
+  if (usados) return erro(res, 409, 'A conta tem lançamentos. Arquive em vez de apagar.', 'conta_com_lancamentos', { n: usados });
+  await Recorrente.updateMany({ conta: req.params.id }, { conta: null });
+  await Conta.findByIdAndDelete(req.params.id);
+  res.status(204).end();
+}));
+/** Corrige o saldo para o valor real (ex.: extrato do banco ou valor atual do investimento) */
+api.post('/carteira/:id/ajuste', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const c = await Conta.findById(req.params.id).lean();
+  if (!c) return erro(res, 404, 'Conta não encontrada');
+  const lancs = await Lancamento.find({ $or: [{ conta: c._id }, { contaDestino: c._id }] }).lean();
+  const data = req.body?.data ? new Date(`${String(req.body.data).slice(0, 10)}T12:00:00Z`) : new Date();
+  const atual = saldoConta(c, lancs, data);
+  const diferenca = round2(Number(req.body?.saldo) - atual);
+  if (!Number.isFinite(diferenca)) return erro(res, 400, 'Informe o saldo', 'dados_invalidos');
+  if (Math.abs(diferenca) < 0.005) return res.json({ diferenca: 0 });
+  const l = await Lancamento.create({
+    tipo: diferenca > 0 ? 'receita' : 'despesa', descricao: String(req.body?.descricao || 'Ajuste de saldo').slice(0, 120), valor: Math.abs(diferenca),
+    moeda: c.moeda, data, conta: c._id, ajuste: true,
+  });
+  res.status(201).json({ diferenca, lancamento: l });
+}));
+api.get('/carteira/:id/faturas', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const c = await Conta.findById(req.params.id).lean();
+  if (!c || c.tipo !== 'cartao') return erro(res, 404, 'Cartão não encontrado');
+  const lancs = await Lancamento.find({ $or: [{ conta: c._id }, { contaDestino: c._id }] }).lean();
+  res.json({ cartao: c, ...resumoCartao(c, lancs), faturas: faturasCartao(c, lancs) });
+}));
+/** Paga uma fatura: transferência da conta escolhida para o cartão */
+api.post('/carteira/:id/pagar', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const c = await Conta.findById(req.params.id).lean();
+  if (!c || c.tipo !== 'cartao') return erro(res, 404, 'Cartão não encontrado');
+  const origem = validarId(req.body?.origem) ? req.body.origem : c.contaPagamento;
+  if (!origem) return erro(res, 400, 'Escolha a conta de onde sai o pagamento', 'escolha_origem');
+  const valor = round2(req.body?.valor);
+  if (!(valor > 0)) return erro(res, 400, 'Informe um valor', 'dados_invalidos');
+  const contaOrigem = await Conta.findById(origem).lean();
+  const l = await Lancamento.create({
+    tipo: 'transferencia', descricao: String(req.body?.descricao || `${c.nome} · ${req.body?.mes || ''}`).trim().slice(0, 120), valor: req.body?.valorOrigem ? round2(req.body.valorOrigem) : valor,
+    valorDestino: contaOrigem && contaOrigem.moeda !== c.moeda ? valor : null, moeda: contaOrigem?.moeda || c.moeda,
+    data: req.body?.data ? new Date(`${String(req.body.data).slice(0, 10)}T12:00:00Z`) : new Date(),
+    conta: origem, contaDestino: c._id, fatura: /^\d{4}-\d{2}$/.test(req.body?.mes || '') ? req.body.mes : null,
+  });
+  res.status(201).json(l);
+}));
+
+// ---------- viagens ----------
+const camposViagem = ({ nome, icone, cor, moeda, orcamento, inicio, fim, arquivada }) =>
+  Object.fromEntries(Object.entries({
+    nome, icone, cor, moeda, orcamento: orcamento === undefined ? undefined : round2(orcamento),
+    inicio: inicio === undefined ? undefined : inicio || null, fim: fim === undefined ? undefined : fim || null, arquivada,
+  }).filter(([, v]) => v !== undefined));
+
+async function viagensComResumo(filtro = {}) {
+  const [viagens, categorias] = await Promise.all([Viagem.find(filtro).sort({ arquivada: 1, inicio: -1, createdAt: -1 }).lean(), Categoria.find().lean()]);
+  const lancs = viagens.length ? await Lancamento.find({ viagem: { $in: viagens.map((v) => v._id) } }).lean() : [];
+  const conv = await conversorPorDia(lancs.map((l) => new Date(l.data).toISOString().slice(0, 10)));
+  return { viagens: viagens.map((v) => ({ ...v, ...resumoViagem(v, lancs, conv, categorias) })), lancs };
+}
+api.get('/viagens', wrap(async (_req, res) => res.json((await viagensComResumo()).viagens)));
+api.get('/viagens/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const { viagens, lancs } = await viagensComResumo({ _id: req.params.id });
+  if (!viagens.length) return erro(res, 404, 'Viagem não encontrada');
+  res.json({ ...viagens[0], lancamentos: lancs.sort((a, b) => new Date(b.data) - new Date(a.data)) });
+}));
+api.post('/viagens', wrap(async (req, res) => res.status(201).json(await Viagem.create(camposViagem(req.body)))));
+api.put('/viagens/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const v = await Viagem.findByIdAndUpdate(req.params.id, camposViagem(req.body), { new: true, runValidators: true });
+  v ? res.json(v) : erro(res, 404, 'Viagem não encontrada');
+}));
+api.delete('/viagens/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  await Lancamento.updateMany({ viagem: req.params.id }, { viagem: null });
+  await Viagem.findByIdAndDelete(req.params.id);
+  res.status(204).end();
+}));
+
+// ---------- relatório anual ----------
+api.get('/relatorio', wrap(async (req, res) => {
+  await gerarRecorrentes();
+  const ano = /^\d{4}$/.test(req.query.ano || '') ? Number(req.query.ano) : new Date().getUTCFullYear();
+  const base = ['EUR', 'BRL', 'USD'].includes(req.query.base) ? req.query.base : 'EUR';
+  const { taxas } = await obterTaxas();
+  const conv = (v, m) => converter(v, m, base, taxas);
+  const intervalo = { $gte: new Date(Date.UTC(ano, 0, 1)), $lt: new Date(Date.UTC(ano + 1, 0, 1)) };
+  const [lancamentos, categorias, movsRend, contasRend, primeiro] = await Promise.all([
+    Lancamento.find({ data: intervalo }).lean(), Categoria.find().lean(), Movimento.find({ data: intervalo }).lean(), ContaRendimento.find().lean(),
+    Lancamento.findOne().sort({ data: 1 }).lean(),
+  ]);
+  const anoAtual = new Date().getUTCFullYear();
+  const desde = primeiro ? new Date(primeiro.data).getUTCFullYear() : anoAtual;
+  res.json({ base, anos: Array.from({ length: Math.max(1, anoAtual - desde + 1) }, (_, i) => anoAtual - i), ...relatorioAnual({ ano, lancamentos, categorias, movsRend, contasRend, conv }) });
+}));
+
+// ---------- lembretes no celular ----------
+api.get('/push/chave', wrap(async (_req, res) => res.json({ chave: await chavePublica() })));
+api.post('/push/inscrever', wrap(async (req, res) => {
+  const ok = await inscrever(req.body?.inscricao, { idioma: req.body?.idioma, dias: req.body?.dias });
+  ok ? res.status(201).json({ ok: true }) : erro(res, 400, 'Inscrição inválida', 'dados_invalidos');
+}));
+api.post('/push/cancelar', wrap(async (req, res) => { await cancelarInscricao(req.body?.endpoint); res.json({ ok: true }); }));
+api.post('/push/teste', wrap(async (req, res) => res.json({ enviados: await enviarTeste(req.body?.endpoint) })));
+api.get('/lembretes', wrap(async (req, res) => {
+  const dias = Math.min(31, Math.max(1, Number(req.query.dias) || 7));
+  const dados = await carregarCarteira();
+  res.json(lembretes({ recorrentes: await Recorrente.find({ ativo: true }).lean(), cartoes: dados.contas.filter((c) => c.tipo === 'cartao' && !c.arquivada), lancamentos: dados.lancamentos, hoje: new Date(), dias }));
+}));
+
 // ---------- backup ----------
 api.get('/exportar', wrap(async (_req, res) => {
-  const [categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras] = await Promise.all([
+  const [categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens] = await Promise.all([
     Categoria.find().lean(), Lancamento.find().lean(), Recorrente.find().lean(), ContaRendimento.find().lean(), Movimento.find().lean(),
-    Meta.find().lean(), ContribuicaoMeta.find().lean(), RegraCategoria.find().lean(),
+    Meta.find().lean(), ContribuicaoMeta.find().lean(), RegraCategoria.find().lean(), Conta.find().lean(), Viagem.find().lean(),
   ]);
   res.setHeader('Content-Disposition', `attachment; filename="minhas-financas-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ versao: 3, exportadoEm: new Date(), categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras });
+  res.json({ versao: 4, exportadoEm: new Date(), categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens });
 }));
 
 export default api;

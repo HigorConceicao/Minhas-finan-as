@@ -1,4 +1,4 @@
-import { dinheiro, mesNaFrase, pct } from '../fmt.js';
+import { dataCurta, dinheiro, mesNaFrase, pct } from '../fmt.js';
 import { useT } from '../i18n.js';
 import { Barra, Carregando, IconeCategoria, SeletorMes } from './ui.jsx';
 import Icone from './Icones.jsx';
@@ -41,6 +41,8 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
         </button>
       </section>
 
+      {resumo.proximos?.length > 0 && <CartaoProximos itens={resumo.proximos} irPara={irPara} />}
+
       {atencao.length > 0 && <CartaoAtencao itens={atencao} base={base} aoAbrir={() => irPara('orcamento')} />}
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -61,10 +63,11 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
           )}
         </section>
 
+        {resumo.temContas ? <CartaoPatrimonio resumo={resumo} base={base} aoAbrir={() => irPara('contas')} /> : (
         <section className="cartao p-5">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-base">{t('visao.contas')}</h3>
-            <button className="text-sm font-semibold text-marca" onClick={() => irPara('rendimento')}>{t('comum.abrir')} →</button>
+            <button className="text-sm font-semibold text-marca" onClick={() => irPara('contas')}>{t('comum.abrir')} →</button>
           </div>
           {!resumo.contas.length ? (
             <button className="w-full rounded-2xl border-2 border-dashed border-linha p-4 text-sm font-semibold text-texto-2 hover:bg-sutil" onClick={() => irPara('rendimento')}>
@@ -91,6 +94,7 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
             </ul>
           )}
         </section>
+        )}
       </div>
 
       {resumo.metas?.length > 0 && (
@@ -141,18 +145,17 @@ function CartaoAtencao({ itens, base, aoAbrir }) {
   };
   return (
     <section className="cartao overflow-hidden">
-      <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-aviso-suave text-aviso"><Icone nome="alerta" className="h-5 w-5" forte /></span>
-          <div>
-            <h3 className="text-base">{t('visao.atencao')}</h3>
-            <p className="text-xs text-texto-3">
-              {lista.length === 1 ? t('visao.atencaoSub1') : t('visao.atencaoSub', { n: lista.length })}
-              {excessoTotal > 0 && <> · <span className="num font-semibold text-neg">{t('visao.excessoTotal', { v: dinheiro(excessoTotal, base) })}</span></>}
-            </p>
-          </div>
+      <div className="flex items-center gap-3 px-5 pb-3 pt-5">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-aviso-suave text-aviso"><Icone nome="alerta" className="h-5 w-5" forte /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base">{t('visao.atencao')}</h3>
+          <p className="text-xs text-texto-3">
+            {lista.length === 1 ? t('visao.atencaoSub1') : t('visao.atencaoSub', { n: lista.length })}
+            {excessoTotal > 0 && <> · <span className="num font-semibold text-neg">{t('visao.excessoTotal', { v: dinheiro(excessoTotal, base) })}</span></>}
+          </p>
         </div>
-        <button className="shrink-0 text-sm font-semibold text-marca" onClick={aoAbrir}>{t('visao.verOrcamento')}</button>
+        <button className="hidden shrink-0 text-sm font-semibold text-marca sm:block" onClick={aoAbrir}>{t('visao.verOrcamento')}</button>
+        <button className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-marca hover:bg-marca-suave sm:hidden" onClick={aoAbrir} aria-label={t('visao.verOrcamento')}><Icone nome="direita" className="h-4 w-4" forte /></button>
       </div>
       <ul className="divide-y divide-linha border-t border-linha">
         {lista.map((o) => {
@@ -164,7 +167,7 @@ function CartaoAtencao({ itens, base, aoAbrir }) {
                 <span className="min-w-0">
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold">{o.nome}</span>
-                    <span className={`chip shrink-0 px-2 py-0.5 text-[11px] ${e.chip}`}>{t(`visao.sit.${o.sit}`)}</span>
+                    <span className={`num chip shrink-0 px-2 py-0.5 text-[11px] ${e.chip}`}>{o.sit === 'acima' ? `+${dinheiro(o.excesso, base)}` : o.sit === 'perto' ? pct(o.pct, 0) : t('visao.sit.limite')}</span>
                   </span>
                   <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-sutil">
                     <span className={`block h-full rounded-full ${e.barra}`} style={{ width: `${Math.min(100, o.pct)}%` }} />
@@ -172,11 +175,69 @@ function CartaoAtencao({ itens, base, aoAbrir }) {
                 </span>
                 <span className="text-right">
                   <span className="num block text-sm font-bold">{dinheiro(o.gasto, base)}</span>
-                  <span className="num block text-xs text-texto-3">
-                    {o.excesso > 0 ? <span className="font-semibold text-neg">+{dinheiro(o.excesso, base)}</span> : `${pct(o.pct, 0)}`}
-                    {' · '}{t('visao.deLimite', { v: dinheiro(o.limite, base) })}
-                  </span>
+                  <span className="num block text-xs text-texto-3">{t('visao.deLimite', { v: dinheiro(o.limite, base) })}</span>
                 </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** Patrimônio líquido: o que tenho menos o que devo, em todas as contas */
+function CartaoPatrimonio({ resumo, base, aoAbrir }) {
+  const t = useT();
+  const p = resumo.patrimonio;
+  const total = p.ativos + p.passivos || 1;
+  return (
+    <section className="cartao flex flex-col p-5">
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="text-base">{t('visao.patrimonio')}</h3>
+        <button className="text-sm font-semibold text-marca" onClick={aoAbrir}>{t('comum.abrir')} →</button>
+      </div>
+      <p className={`num text-3xl font-extrabold tracking-tight ${p.liquido < 0 ? 'text-neg' : ''}`}>{dinheiro(p.liquido, base)}</p>
+      <div className="mt-5 flex h-2 overflow-hidden rounded-full bg-sutil">
+        <span className="h-full bg-pos" style={{ width: `${(p.ativos / total) * 100}%` }} />
+        <span className="h-full bg-neg" style={{ width: `${(p.passivos / total) * 100}%` }} />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+        <div><p className="flex items-center gap-1.5 text-xs font-semibold text-texto-3"><i className="inline-block h-2 w-2 rounded-full bg-pos" />{t('visao.tenho')}</p><p className="num mt-0.5 font-bold">{dinheiro(p.ativos, base)}</p></div>
+        <div className="text-right"><p className="flex items-center justify-end gap-1.5 text-xs font-semibold text-texto-3"><i className="inline-block h-2 w-2 rounded-full bg-neg" />{t('visao.devo')}</p><p className="num mt-0.5 font-bold">{dinheiro(p.passivos, base)}</p></div>
+      </div>
+    </section>
+  );
+}
+
+/** O que vence nos próximos 7 dias: contas fixas e faturas de cartão */
+function CartaoProximos({ itens, irPara }) {
+  const t = useT();
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  const lista = itens.filter((i) => !i.tipo.startsWith('orcamento')).sort((a, b) => new Date(a.data) - new Date(b.data)).slice(0, 5);
+  if (!lista.length) return null;
+  const quando = (iso) => {
+    const d = Math.round((new Date(String(iso).slice(0, 10) + 'T12:00:00') - hoje) / 86400000);
+    return d < 0 ? t('visao.venceu', { d: dataCurta(iso) }) : t('visao.vence', { d: dataCurta(iso) });
+  };
+  return (
+    <section className="cartao overflow-hidden">
+      <div className="flex items-center gap-3 px-5 pb-3 pt-5">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-marca-suave text-marca"><Icone nome="relogio" className="h-5 w-5" /></span>
+        <h3 className="text-base">{t('visao.proximos')}</h3>
+      </div>
+      <ul className="divide-y divide-linha border-t border-linha">
+        {lista.map((i) => {
+          const fatura = i.tipo.startsWith('fatura');
+          const vencida = i.tipo === 'fatura-vencida';
+          return (
+            <li key={i.chave}>
+              <button className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-sutil/60" onClick={() => irPara(fatura ? 'contas' : 'recorrentes')}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{fatura ? t('visao.fatura', { n: i.titulo }) : i.titulo}</span>
+                  <span className={`block text-xs ${vencida ? 'font-semibold text-neg' : 'text-texto-3'}`}>{quando(i.data)}</span>
+                </span>
+                <span className="num shrink-0 text-sm font-bold">{dinheiro(i.valor, i.moeda)}</span>
               </button>
             </li>
           );

@@ -15,6 +15,7 @@ export const Categoria = model(
       orcamentoMensal: { type: Number, default: 0, min: 0 }, // 0 = sem orçamento
       moeda: { type: String, enum: MOEDAS, default: 'EUR' },
       alertaPct: { type: Number, default: 80, min: 1, max: 100 }, // aviso ao atingir X% do orçamento
+      dedutivel: { type: Boolean, default: false }, // aparece no relatório para a declaração de imposto
     },
     opts
   )
@@ -24,13 +25,23 @@ export const Lancamento = model(
   'Lancamento',
   new Schema(
     {
-      tipo: { type: String, enum: ['despesa', 'receita'], required: true },
+      tipo: { type: String, enum: ['despesa', 'receita', 'transferencia'], required: true },
       descricao: { type: String, required: true, trim: true },
       valor: { type: Number, required: true, min: 0 },
       moeda: { type: String, enum: MOEDAS, default: 'EUR' },
       data: { type: Date, required: true },
       categoria: { type: Schema.Types.ObjectId, ref: 'Categoria', default: null },
       nota: { type: String, default: '' },
+      conta: { type: Schema.Types.ObjectId, ref: 'Conta', default: null, index: true },
+      // transferência: sai de `conta` e entra em `contaDestino` (valorDestino quando as moedas diferem)
+      contaDestino: { type: Schema.Types.ObjectId, ref: 'Conta', default: null, index: true },
+      valorDestino: { type: Number, default: null },
+      // compra numa moeda diferente da conta: quanto foi cobrado na moeda da conta
+      valorConta: { type: Number, default: null },
+      fatura: { type: String, default: null }, // pagamento de cartão: 'AAAA-MM' da fatura paga
+      ajuste: { type: Boolean, default: false }, // correção de saldo: não conta como receita/despesa
+      viagem: { type: Schema.Types.ObjectId, ref: 'Viagem', default: null, index: true },
+      parcela: { type: { numero: Number, total: Number, grupo: String, valorTotal: Number, _id: false }, default: null },
       recorrente: { type: Schema.Types.ObjectId, ref: 'Recorrente', default: null },
       competencia: { type: String, default: null }, // 'YYYY-MM' quando gerado por recorrência
       importId: { type: String, default: null }, // impressão digital da linha do extrato importado
@@ -40,6 +51,61 @@ export const Lancamento = model(
     .index({ recorrente: 1, competencia: 1 }, { unique: true, partialFilterExpression: { recorrente: { $type: 'objectId' } } })
     .index({ importId: 1 }, { unique: true, partialFilterExpression: { importId: { $type: 'string' } } })
 );
+
+export const Conta = model(
+  'Conta',
+  new Schema(
+    {
+      nome: { type: String, required: true, trim: true },
+      tipo: { type: String, enum: ['corrente', 'dinheiro', 'investimento', 'divida', 'cartao'], default: 'corrente' },
+      instituicao: { type: String, default: '' },
+      moeda: { type: String, enum: MOEDAS, default: 'EUR' },
+      saldoInicial: { type: Number, default: 0 }, // dívida: negativo
+      dataInicio: { type: Date, default: () => new Date() },
+      cor: { type: String, default: '#2952eb' },
+      arquivada: { type: Boolean, default: false },
+      // cartão de crédito
+      limite: { type: Number, default: 0, min: 0 },
+      diaFechamento: { type: Number, min: 1, max: 31, default: 25 },
+      diaVencimento: { type: Number, min: 1, max: 31, default: 5 },
+      contaPagamento: { type: Schema.Types.ObjectId, ref: 'Conta', default: null },
+    },
+    opts
+  )
+);
+
+export const Viagem = model(
+  'Viagem',
+  new Schema(
+    {
+      nome: { type: String, required: true, trim: true },
+      icone: { type: String, default: '✈️' },
+      cor: { type: String, default: '#e0672b' },
+      moeda: { type: String, enum: MOEDAS, default: 'EUR' },
+      orcamento: { type: Number, default: 0, min: 0 },
+      inicio: { type: Date, default: null },
+      fim: { type: Date, default: null },
+      arquivada: { type: Boolean, default: false },
+    },
+    opts
+  )
+);
+
+// notificações no celular (Web Push)
+export const InscricaoPush = model(
+  'InscricaoPush',
+  new Schema(
+    {
+      endpoint: { type: String, required: true, unique: true },
+      keys: { p256dh: String, auth: String },
+      idioma: { type: String, default: 'pt' },
+      dias: { type: Number, default: 2 }, // avisar X dias antes do vencimento
+    },
+    opts
+  )
+);
+export const LembreteEnviado = model('LembreteEnviado', new Schema({ chave: { type: String, required: true, unique: true } }, opts));
+export const Config = model('Config', new Schema({ chave: { type: String, required: true, unique: true }, valor: Schema.Types.Mixed }, opts));
 
 export const Meta = model(
   'Meta',
@@ -93,6 +159,7 @@ export const Recorrente = model(
       valor: { type: Number, required: true, min: 0 },
       moeda: { type: String, enum: MOEDAS, default: 'EUR' },
       categoria: { type: Schema.Types.ObjectId, ref: 'Categoria', default: null },
+      conta: { type: Schema.Types.ObjectId, ref: 'Conta', default: null },
       frequencia: { type: String, enum: ['mensal', 'trimestral', 'anual'], default: 'mensal' },
       diaDoMes: { type: Number, min: 1, max: 31, default: 1 },
       inicio: { type: Date, required: true },

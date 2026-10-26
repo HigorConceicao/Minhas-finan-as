@@ -1,17 +1,23 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { mesLongo, somarMes } from '../fmt.js';
 import { useT } from '../i18n.js';
 import Icone from './Icones.jsx';
 
+const PILHA = [];
+if (typeof window !== 'undefined') window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && PILHA.length) PILHA.at(-1).fechar(); });
+
 export function Modal({ titulo, aberto, aoFechar, children, rodape, largo }) {
   const t = useT();
+  const fecharRef = useRef(aoFechar);
+  fecharRef.current = aoFechar;
   useEffect(() => {
     if (!aberto) return;
-    const esc = (e) => e.key === 'Escape' && aoFechar();
-    window.addEventListener('keydown', esc);
+    // Esc fecha só a janela de cima (pilha de janelas abertas, na ordem em que abriram)
+    const entrada = { fechar: () => fecharRef.current() };
+    PILHA.push(entrada);
     document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', esc); document.body.style.overflow = ''; };
-  }, [aberto, aoFechar]);
+    return () => { PILHA.splice(PILHA.indexOf(entrada), 1); if (!PILHA.length) document.body.style.overflow = ''; };
+  }, [aberto]);
   if (!aberto) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-texto/30 backdrop-blur-sm sm:items-center" onClick={aoFechar}>

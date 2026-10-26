@@ -5,6 +5,7 @@ import { useT } from '../i18n.js';
 import { BotaoConfirmar, Campo, Carregando, IconeCategoria, Modal, Segmentado, SeletorMes, Vazio, useAviso } from './ui.jsx';
 import Icone from './Icones.jsx';
 import Importar from './Importar.jsx';
+import { ultimaConta, useDados } from '../dados.jsx';
 
 export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoConsumirNovo }) {
   const t = useT();
@@ -14,6 +15,7 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
   const [filtroCat, setFiltroCat] = useState('');
   const [busca, setBusca] = useState('');
   const [importando, setImportando] = useState(false);
+  const { recarregar: recarregarDados } = useDados();
 
   const carregar = useCallback(async () => setLista(await get(`/lancamentos?mes=${mes}`)), [mes]);
   useEffect(() => { setLista(null); carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar]);
@@ -37,6 +39,7 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
   const totais = useMemo(() => {
     const r = {};
     for (const l of filtrada) {
+      if (l.tipo === 'transferencia' || l.ajuste) continue;
       r[l.moeda] ??= { r: 0, d: 0 };
       r[l.moeda][l.tipo === 'receita' ? 'r' : 'd'] += l.valor;
     }
@@ -69,7 +72,7 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
         <div className="flex flex-wrap gap-2">
           {Object.entries(totais).map(([moeda, x]) => (
             <span key={moeda} className="num flex gap-3 rounded-full bg-cartao px-4 py-2 text-sm font-semibold shadow-cartao">
-              <span className="text-pos">+{dinheiro(x.r, moeda)}</span><span className="text-neg">−{dinheiro(x.d, moeda)}</span>
+              {x.r > 0 && <span className="text-pos">+{dinheiro(x.r, moeda)}</span>}{x.d > 0 && <span className="text-neg">−{dinheiro(x.d, moeda)}</span>}
             </span>
           ))}
         </div>
@@ -84,26 +87,7 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
             <section key={dia}>
               <p className="rotulo mb-2 px-1">{data(dia)}</p>
               <ul className="cartao divide-y divide-linha overflow-hidden">
-                {itens.map((l) => {
-                  const c = catMap.get(l.categoria);
-                  return (
-                    <li key={l._id}>
-                      <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-sutil/60" onClick={() => setForm(l)}>
-                        <IconeCategoria cor={c?.cor} icone={c?.icone} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-bold">{l.descricao}</span>
-                          <span className="flex items-center gap-1 text-xs text-texto-3">
-                            {c?.nome || t('comum.semCategoria')}
-                            {l.recorrente && <><span aria-hidden>·</span><Icone nome="recorrente" className="h-3 w-3" />{t('lanc.recorrente')}</>}
-                          </span>
-                        </span>
-                        <span className={`num text-sm font-bold ${l.tipo === 'receita' ? 'text-pos' : ''}`}>
-                          {l.tipo === 'receita' ? '+' : '−'}{dinheiro(l.valor, l.moeda)}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
+                {itens.map((l) => <li key={l._id}><ItemLancamento l={l} cat={catMap.get(l.categoria)} aoAbrir={() => setForm(l)} /></li>)}
               </ul>
             </section>
           ))}
@@ -113,65 +97,204 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
       <Importar aberto={importando} aoFechar={() => setImportando(false)} categorias={categorias}
         aoImportar={async (m) => { if (m && m !== mes) setMes(m); else await carregar(); }} />
       <FormLancamento aberto={form !== null} item={form} categorias={categorias} aoFechar={() => setForm(null)}
-        aoSalvar={async () => { setForm(null); await carregar(); avisar(t('lanc.salvo')); }}
-        aoApagar={async (id) => { await del(`/lancamentos/${id}`); setForm(null); await carregar(); avisar(t('lanc.apagado')); }} />
+        aoSalvar={async () => { setForm(null); await carregar(); recarregarDados(); avisar(t('lanc.salvo')); }}
+        aoApagar={async (id, todas) => { await del(`/lancamentos/${id}${todas ? '?todas=1' : ''}`); setForm(null); await carregar(); avisar(t('lanc.apagado')); }} />
     </div>
   );
 }
 
+/** Uma linha de lançamento (lista, extrato de conta, viagem) */
+export function ItemLancamento({ l, cat, aoAbrir, contaAtual }) {
+  const t = useT();
+  const { contas } = useDados();
+  const nomeConta = (id) => contas.find((c) => c._id === id)?.nome;
+  const transf = l.tipo === 'transferencia';
+  // numa conta específica, a transferência é entrada ou saída
+  const entrada = transf ? contaAtual && l.contaDestino === contaAtual : l.tipo === 'receita';
+  const naContaDaCompra = !transf && contaAtual && contaAtual === l.conta && l.valorConta != null;
+  const valor = naContaDaCompra ? l.valorConta : transf && contaAtual === l.contaDestino ? l.valorDestino ?? l.valor : l.valor;
+  const moeda = naContaDaCompra ? contas.find((c) => c._id === l.conta)?.moeda || l.moeda
+    : transf && contaAtual === l.contaDestino && l.valorDestino != null ? contas.find((c) => c._id === l.contaDestino)?.moeda || l.moeda : l.moeda;
+  const detalhes = [];
+  if (transf) detalhes.push(`${nomeConta(l.conta) || '?'} → ${nomeConta(l.contaDestino) || '?'}`);
+  else {
+    detalhes.push(cat?.nome || t('comum.semCategoria'));
+    if (l.conta && !contaAtual && nomeConta(l.conta)) detalhes.push(nomeConta(l.conta));
+  }
+  if (l.parcela) detalhes.push(t('lanc.parcela', { n: l.parcela.numero, t: l.parcela.total }));
+  if (l.ajuste) detalhes.push(t('lanc.ajusteSaldo'));
+  if (naContaDaCompra) detalhes.push(dinheiro(l.valor, l.moeda));
+  return (
+    <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-sutil/60" onClick={aoAbrir}>
+      {transf
+        ? <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-sutil text-texto-2"><Icone nome="recorrente" className="h-4 w-4" /></span>
+        : <IconeCategoria cor={cat?.cor} icone={cat?.icone} />}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-bold">{l.descricao}</span>
+        <span className="flex items-center gap-1 truncate text-xs text-texto-3">
+          {detalhes.join(' · ')}
+          {l.recorrente && <><span aria-hidden>·</span><Icone nome="recorrente" className="h-3 w-3 shrink-0" />{t('lanc.recorrente')}</>}
+        </span>
+      </span>
+      <span className={`num shrink-0 text-sm font-bold ${transf && !contaAtual ? 'text-texto-2' : entrada ? 'text-pos' : ''}`}>
+        {transf && !contaAtual ? '' : entrada ? '+' : '−'}{dinheiro(valor, moeda)}
+      </span>
+    </button>
+  );
+}
+
+const MOEDAS = ['EUR', 'BRL', 'USD'];
+
+/**
+ * Formulário de lançamento. `item` sem _id traz valores iniciais (ex.: { tipo: 'transferencia', conta }).
+ */
 export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, aoApagar }) {
   const t = useT();
   const avisar = useAviso();
+  const { contasAtivas, contas, viagensAtivas, viagens } = useDados();
   const novo = !item?._id;
   const [f, setF] = useState({});
   useEffect(() => {
     if (!aberto) return;
     const ultimaMoeda = (() => { try { return localStorage.getItem('mf2-moeda'); } catch { return null; } })();
-    setF(item?._id
-      ? { ...item, valor: paraCampo(item.valor), data: paraInput(item.data), categoria: item.categoria || '' }
-      : { tipo: 'despesa', descricao: '', valor: '', moeda: ultimaMoeda || 'EUR', data: hojeISO(), categoria: '', nota: '' });
-  }, [aberto, item]);
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+    if (item?._id) {
+      setF({ ...item, valor: paraCampo(item.valor), valorDestino: paraCampo(item.valorDestino), valorConta: paraCampo(item.valorConta), data: paraInput(item.data), categoria: item.categoria || '',
+        conta: item.conta || '', contaDestino: item.contaDestino || '', viagem: item.viagem || '', parcelas: '1' });
+      return;
+    }
+    const conta = item?.conta ?? (contasAtivas.some((c) => c._id === ultimaConta.get()) ? ultimaConta.get() : '');
+    const moedaConta = contas.find((c) => c._id === conta)?.moeda;
+    setF({ tipo: 'despesa', descricao: '', valor: '', moeda: moedaConta || ultimaMoeda || 'EUR', data: hojeISO(), categoria: '', nota: '',
+      conta, contaDestino: '', valorDestino: '', valorConta: '', viagem: '', parcelas: '1', ...item });
+  }, [aberto, item]); // eslint-disable-line react-hooks/exhaustive-deps
+  // valor, moeda ou conta mudou: o valor cobrado na conta é recalculado
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value, ...(k === 'valor' || k === 'moeda' ? { valorConta: '' } : {}) }));
+  const transf = f.tipo === 'transferencia';
   const cats = categorias.filter((c) => c.tipo === f.tipo);
+  const contaOrig = contas.find((c) => c._id === f.conta);
+  const contaDest = contas.find((c) => c._id === f.contaDestino);
+  const moedasDiferentes = transf && contaOrig && contaDest && contaOrig.moeda !== contaDest.moeda;
+  const ehCartao = contaOrig?.tipo === 'cartao' && f.tipo === 'despesa';
+  // ao escolher a conta, a moeda acompanha
+  const escolherConta = (id) => setF((x) => ({ ...x, conta: id, valorConta: '', moeda: contas.find((c) => c._id === id)?.moeda || x.moeda }));
+  const outraMoeda = !transf && contaOrig && f.moeda && contaOrig.moeda !== f.moeda;
+  const opcoesConta = (excluir) => [...contasAtivas, ...(f.conta && !contasAtivas.some((c) => c._id === f.conta) ? contas.filter((c) => c._id === f.conta) : [])]
+    .filter((c) => c._id !== excluir);
+  const opcoesViagem = [...viagensAtivas, ...(f.viagem && !viagensAtivas.some((v) => v._id === f.viagem) ? viagens.filter((v) => v._id === f.viagem) : [])];
 
   const salvar = async (e) => {
     e.preventDefault();
     const valor = lerNumero(f.valor);
-    if (!f.descricao?.trim()) return avisar(t('lanc.descreva'), 'erro');
     if (!(valor > 0)) return avisar(t('lanc.informeValor'), 'erro');
-    const corpo = { tipo: f.tipo, descricao: f.descricao, valor, moeda: f.moeda, data: f.data, categoria: f.categoria || null, nota: f.nota };
+    const descricao = f.descricao?.trim() || (transf && contaOrig && contaDest ? `${contaOrig.nome} → ${contaDest.nome}` : '');
+    if (!descricao) return avisar(t('lanc.descreva'), 'erro');
+    if (transf && (!f.conta || !f.contaDestino || f.conta === f.contaDestino)) return avisar(t('erro.transferencia_contas'), 'erro');
+    const corpo = {
+      tipo: f.tipo, descricao, valor, moeda: transf ? contaOrig?.moeda || f.moeda : f.moeda, data: f.data, nota: f.nota,
+      categoria: transf ? null : f.categoria || null, conta: f.conta || null, contaDestino: transf ? f.contaDestino : null,
+      valorDestino: moedasDiferentes ? lerNumero(f.valorDestino) || null : null, valorConta: outraMoeda ? lerNumero(f.valorConta) || null : null, viagem: transf ? null : f.viagem || null,
+      ...(novo && ehCartao && Number(f.parcelas) > 1 ? { parcelas: Number(f.parcelas) } : {}),
+    };
     try {
       novo ? await post('/lancamentos', corpo) : await put(`/lancamentos/${item._id}`, corpo);
-      try { localStorage.setItem('mf2-moeda', f.moeda); } catch {}
+      try { localStorage.setItem('mf2-moeda', corpo.moeda); } catch {}
+      if (f.conta && !transf) ultimaConta.set(f.conta);
       aoSalvar();
     } catch (err) { avisar(err.message, 'erro'); }
   };
 
+  const tipos = [['despesa', t('comum.despesa')], ['receita', t('comum.receita')]];
+  if (contasAtivas.length >= 2 || transf) tipos.push(['transferencia', t('lanc.transferencia')]);
+
   return (
     <Modal titulo={novo ? t('lanc.novoTitulo') : t('lanc.editarTitulo')} aberto={aberto} aoFechar={aoFechar}>
       <form onSubmit={salvar} className="space-y-4">
-        <Segmentado opcoes={[['despesa', t('comum.despesa')], ['receita', t('comum.receita')]]} valor={f.tipo}
-          aoMudar={(k) => setF((x) => ({ ...x, tipo: k, categoria: '' }))} />
+        <Segmentado opcoes={tipos} valor={f.tipo} aoMudar={(k) => setF((x) => ({ ...x, tipo: k, categoria: '' }))} />
         <div className="grid grid-cols-[1fr_auto] gap-3">
           <Campo rotulo={t('comum.valor')}>
             <input id="lanc-valor" className="campo num text-2xl font-bold" inputMode="decimal" value={f.valor ?? ''} onChange={set('valor')} placeholder={t('comum.zero')} autoFocus={novo} />
           </Campo>
-          <Campo rotulo={t('comum.moeda')}><select id="lanc-moeda" className="campo" value={f.moeda} onChange={set('moeda')}><option>EUR</option><option>BRL</option><option>USD</option></select></Campo>
+          {transf
+            ? <Campo rotulo={t('comum.moeda')}><span className="campo block bg-sutil text-texto-2">{contaOrig?.moeda || '—'}</span></Campo>
+            : <Campo rotulo={t('comum.moeda')}><select id="lanc-moeda" className="campo" value={f.moeda} onChange={set('moeda')}>{MOEDAS.map((m) => <option key={m}>{m}</option>)}</select></Campo>}
         </div>
-        <Campo rotulo={t('comum.descricao')}><input id="lanc-desc" className="campo" value={f.descricao || ''} onChange={set('descricao')} /></Campo>
-        <div className="grid grid-cols-2 gap-3">
-          <Campo rotulo={t('comum.data')}><input id="lanc-data" type="date" className="campo" value={f.data || ''} onChange={set('data')} /></Campo>
-          <Campo rotulo={t('comum.categoria')}>
-            <select id="lanc-cat" className="campo" value={f.categoria} onChange={set('categoria')}>
-              <option value="">{t('comum.semCategoria')}</option>
-              {cats.map((c) => <option key={c._id} value={c._id}>{c.icone} {c.nome}</option>)}
-            </select>
-          </Campo>
-        </div>
+
+        {transf ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Campo rotulo={t('lanc.de')}>
+                <select id="lanc-conta" className="campo" value={f.conta} onChange={(e) => escolherConta(e.target.value)}>
+                  <option value="">—</option>{opcoesConta(null).map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
+                </select>
+              </Campo>
+              <Campo rotulo={t('lanc.para')}>
+                <select id="lanc-destino" className="campo" value={f.contaDestino} onChange={set('contaDestino')}>
+                  <option value="">—</option>{opcoesConta(f.conta).map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
+                </select>
+              </Campo>
+            </div>
+            {moedasDiferentes && (
+              <Campo rotulo={t('lanc.valorRecebido', { m: contaDest.moeda })} dica={t('lanc.valorRecebidoDica')}>
+                <input id="lanc-valor-destino" className="campo num" inputMode="decimal" value={f.valorDestino ?? ''} onChange={set('valorDestino')} placeholder={t('comum.zero')} />
+              </Campo>
+            )}
+            <Campo rotulo={t('comum.descricao')}><input id="lanc-desc" className="campo" value={f.descricao || ''} onChange={set('descricao')}
+              placeholder={contaOrig && contaDest ? `${contaOrig.nome} → ${contaDest.nome}` : ''} /></Campo>
+            <Campo rotulo={t('comum.data')}><input id="lanc-data" type="date" className="campo" value={f.data || ''} onChange={set('data')} /></Campo>
+          </>
+        ) : (
+          <>
+            <Campo rotulo={t('comum.descricao')}><input id="lanc-desc" className="campo" value={f.descricao || ''} onChange={set('descricao')} /></Campo>
+            <div className="grid grid-cols-2 gap-3">
+              <Campo rotulo={t('comum.data')}><input id="lanc-data" type="date" className="campo" value={f.data || ''} onChange={set('data')} /></Campo>
+              <Campo rotulo={t('comum.categoria')}>
+                <select id="lanc-cat" className="campo" value={f.categoria} onChange={set('categoria')}>
+                  <option value="">{t('comum.semCategoria')}</option>
+                  {cats.map((c) => <option key={c._id} value={c._id}>{c.icone} {c.nome}</option>)}
+                </select>
+              </Campo>
+            </div>
+            {(contas.length > 0 || opcoesViagem.length > 0) && (
+              <div className="grid grid-cols-2 gap-3">
+                {contas.length > 0 && (
+                  <Campo rotulo={t('lanc.conta')} className={opcoesViagem.length ? '' : 'col-span-2'}>
+                    <select id="lanc-conta" className="campo" value={f.conta} onChange={(e) => escolherConta(e.target.value)}>
+                      <option value="">{t('lanc.semConta')}</option>{opcoesConta(null).map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
+                    </select>
+                  </Campo>
+                )}
+                {opcoesViagem.length > 0 && (
+                  <Campo rotulo={t('lanc.viagem')} className={contas.length ? '' : 'col-span-2'}>
+                    <select id="lanc-viagem" className="campo" value={f.viagem} onChange={set('viagem')}>
+                      <option value="">{t('lanc.semViagem')}</option>{opcoesViagem.map((v) => <option key={v._id} value={v._id}>{v.icone} {v.nome}</option>)}
+                    </select>
+                  </Campo>
+                )}
+              </div>
+            )}
+            {outraMoeda && (
+              <Campo rotulo={t('lanc.valorConta', { m: contaOrig.moeda })} dica={t('lanc.valorContaDica')}>
+                <input id="lanc-valor-conta" className="campo num" inputMode="decimal" value={f.valorConta ?? ''} onChange={(e) => setF((x) => ({ ...x, valorConta: e.target.value }))} placeholder={t('lanc.cambioDoDia')} />
+              </Campo>
+            )}
+            {novo && ehCartao && (
+              <Campo rotulo={t('lanc.parcelas')} dica={t('lanc.parcelasDica')}>
+                <select id="lanc-parcelas" className="campo" value={f.parcelas} onChange={set('parcelas')}>
+                  {[1, 2, 3, 4, 5, 6, 8, 10, 12, 18, 24].map((n) => <option key={n} value={n}>{n === 1 ? '1×' : `${n}× ${dinheiro((lerNumero(f.valor) || 0) / n, f.moeda)}`}</option>)}
+                </select>
+              </Campo>
+            )}
+          </>
+        )}
         <Campo rotulo={t('comum.nota')}><input id="lanc-nota" className="campo" value={f.nota || ''} onChange={set('nota')} /></Campo>
         {item?.recorrente && <p className="flex items-center gap-2 text-xs text-texto-3"><Icone nome="recorrente" className="h-3.5 w-3.5" />{t('lanc.geradoRecorrencia')}</p>}
         <div className="flex flex-wrap justify-between gap-2 pt-2">
-          {!novo ? <BotaoConfirmar texto={t('comum.apagarMesmo')} aoConfirmar={() => aoApagar(item._id)}>{t('comum.apagar')}</BotaoConfirmar> : <span />}
+          {!novo ? (
+            <div className="flex flex-wrap gap-1">
+              <BotaoConfirmar texto={t('comum.apagarMesmo')} aoConfirmar={() => aoApagar(item._id, false)}>{t('comum.apagar')}</BotaoConfirmar>
+              {item.parcela && <BotaoConfirmar texto={t('comum.apagarMesmo')} aoConfirmar={() => aoApagar(item._id, true)}>{t('lanc.apagarParcelas')}</BotaoConfirmar>}
+            </div>
+          ) : <span />}
           <div className="flex gap-2">
             <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
             <button className="btn-primario">{t('comum.salvar')}</button>

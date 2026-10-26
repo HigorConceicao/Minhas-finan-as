@@ -129,3 +129,50 @@ export function LinhaSaldo({ serie, projecao, moeda }) {
     </div>
   );
 }
+
+/** Barras agrupadas por mês, várias séries (ex.: entradas × saídas × rendimentos). No celular, desenha em escala menor para o texto continuar legível. */
+export function BarrasMensais({ meses, series, moeda, aria }) {
+  const [foco, setFoco] = useState(null);
+  const estreito = typeof window !== 'undefined' && window.innerWidth < 640;
+  const W = estreito ? 360 : L, H = estreito ? 210 : A;
+  const Mg = estreito ? { t: 10, r: 6, b: 26, l: 46 } : M;
+  const [topo, passo] = escala(Math.max(0, ...series.flatMap((s) => s.valores)));
+  const w = (W - Mg.l - Mg.r) / Math.max(meses.length, 1);
+  const y = (v) => Mg.t + (H - Mg.t - Mg.b) * (1 - Math.max(0, v) / topo);
+  const bw = Math.max(2, Math.min(14, (w - (estreito ? 4 : 8)) / series.length - 1));
+  const ticks = []; for (let v = 0; v <= topo + 1e-9; v += passo) ticks.push(v);
+  const fs = estreito ? 10 : 11;
+  return (
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={aria}>
+        {ticks.map((v) => (
+          <g key={v}>
+            <line x1={Mg.l} x2={W - Mg.r} y1={y(v)} y2={y(v)} className="stroke-linha" strokeDasharray={v ? '3 5' : ''} />
+            <text x={Mg.l - 6} y={y(v) + 3.5} textAnchor="end" fontSize={fs} className="fill-texto-3">{compacto(v, moeda)}</text>
+          </g>
+        ))}
+        {meses.map((m, i) => {
+          const x0 = Mg.l + w * i + (w - series.length * (bw + 1)) / 2;
+          return (
+            <g key={m} onMouseEnter={() => setFoco(i)} onMouseLeave={() => setFoco(null)} onClick={() => setFoco(i)}>
+              <rect x={Mg.l + w * i} y={Mg.t} width={w} height={H - Mg.t - Mg.b} rx="6" className={foco === i ? 'fill-sutil' : 'fill-transparent'} />
+              {series.map((s, j) => (
+                <rect key={s.chave} x={x0 + j * (bw + 1)} y={y(s.valores[i])} width={bw} height={Math.max(0, y(0) - y(s.valores[i]))} rx={Math.min(3, bw / 2.5)} className={s.classe} />
+              ))}
+              <text x={Mg.l + w * i + w / 2} y={H - 8} textAnchor="middle" fontSize={fs} className="fill-texto-2">{estreito ? mesCurto(m).slice(0, 1).toUpperCase() : mesCurto(m)}</text>
+            </g>
+          );
+        })}
+      </svg>
+      {foco !== null && (
+        <div className="pointer-events-none absolute right-2 top-0 rounded-2xl bg-cartao px-3 py-2 text-xs shadow-flutua">
+          <p className="font-bold">{mesCurto(meses[foco])}</p>
+          {series.map((s) => <p key={s.chave} className={`num ${s.texto}`}>{s.rotulo} {dinheiro(s.valores[foco], moeda)}</p>)}
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap gap-4 text-xs font-semibold text-texto-2">
+        {series.map((s) => <span key={s.chave} className="flex items-center gap-1.5"><i className={`inline-block h-2.5 w-2.5 rounded-full ${s.cor}`} /> {s.rotulo}</span>)}
+      </div>
+    </div>
+  );
+}

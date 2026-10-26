@@ -391,9 +391,160 @@ en.imp = {
   semCategoria: 'No category', sugerida: 'suggested',
 };
 
-Object.assign(pt.visao, { atencaoSub: '{n} categorias perto ou acima do limite', atencaoSub1: '1 categoria perto ou acima do limite', excessoTotal: '{v} acima do previsto', deLimite: 'de {v}', sit: { acima: 'Acima', limite: 'No limite', perto: 'Perto do limite' }, verOrcamento: 'Ver orçamento' });
-Object.assign(de.visao, { atencaoSub: '{n} Kategorien nahe am oder über dem Limit', atencaoSub1: '1 Kategorie nahe am oder über dem Limit', excessoTotal: '{v} über Plan', deLimite: 'von {v}', sit: { acima: 'Überschritten', limite: 'Am Limit', perto: 'Fast am Limit' }, verOrcamento: 'Zum Budget' });
-Object.assign(en.visao, { atencaoSub: '{n} categories near or over limit', atencaoSub1: '1 category near or over limit', excessoTotal: '{v} over plan', deLimite: 'of {v}', sit: { acima: 'Over', limite: 'At limit', perto: 'Near limit' }, verOrcamento: 'See budget' });
+
+// ---------- contas, cartões, viagens, relatório, lembretes ----------
+Object.assign(pt.abas, { contas: 'Contas', mais: 'Mais', viagens: 'Viagens', relatorio: 'Relatório anual' });
+Object.assign(pt.abasCurto, { contas: 'Contas', mais: 'Mais' });
+Object.assign(de.abas, { contas: 'Konten', mais: 'Mehr', viagens: 'Reisen', relatorio: 'Jahresbericht' });
+Object.assign(de.abasCurto, { contas: 'Konten', mais: 'Mehr' });
+Object.assign(en.abas, { contas: 'Accounts', mais: 'More', viagens: 'Trips', relatorio: 'Annual report' });
+Object.assign(en.abasCurto, { contas: 'Accounts', mais: 'More' });
+
+Object.assign(pt.erro, { transferencia_contas: 'Escolha duas contas diferentes para a transferência.', conta_com_lancamentos: 'Esta conta tem {n} lançamentos. Arquive em vez de apagar.', escolha_origem: 'Escolha a conta de onde sai o pagamento.' });
+Object.assign(de.erro, { transferencia_contas: 'Wähle zwei verschiedene Konten für die Umbuchung.', conta_com_lancamentos: 'Dieses Konto hat {n} Buchungen. Archiviere es, statt es zu löschen.', escolha_origem: 'Wähle das Konto, von dem bezahlt wird.' });
+Object.assign(en.erro, { transferencia_contas: 'Choose two different accounts for the transfer.', conta_com_lancamentos: 'This account has {n} transactions. Archive it instead of deleting.', escolha_origem: 'Choose the account the payment comes from.' });
+
+Object.assign(pt.lanc, { valorConta: 'Cobrado na conta ({m})', valorContaDica: 'Quanto saiu da conta na moeda dela. Vazio: usa o câmbio do dia.', cambioDoDia: 'Câmbio do dia', transferencia: 'Transferência', conta: 'Conta', semConta: 'Sem conta', de: 'De', para: 'Para', valorRecebido: 'Valor que chegou ({m})', valorRecebidoDica: 'As contas têm moedas diferentes.', parcelas: 'Parcelas', parcelasDica: 'Divide o valor em parcelas mensais no cartão.', viagem: 'Viagem', semViagem: 'Nenhuma', apagarParcelas: 'Apagar todas as parcelas', ajusteSaldo: 'ajuste de saldo', parcela: 'parcela {n}/{t}' });
+Object.assign(de.lanc, { valorConta: 'Belastet auf dem Konto ({m})', valorContaDica: 'Betrag in der Kontowährung. Leer: Tageskurs wird verwendet.', cambioDoDia: 'Tageskurs', transferencia: 'Umbuchung', conta: 'Konto', semConta: 'Ohne Konto', de: 'Von', para: 'Nach', valorRecebido: 'Angekommener Betrag ({m})', valorRecebidoDica: 'Die Konten haben unterschiedliche Währungen.', parcelas: 'Raten', parcelasDica: 'Teilt den Betrag in monatliche Raten auf der Karte.', viagem: 'Reise', semViagem: 'Keine', apagarParcelas: 'Alle Raten löschen', ajusteSaldo: 'Saldokorrektur', parcela: 'Rate {n}/{t}' });
+Object.assign(en.lanc, { valorConta: 'Charged to account ({m})', valorContaDica: 'Amount in the account’s currency. Empty: uses the day’s rate.', cambioDoDia: 'Day’s rate', transferencia: 'Transfer', conta: 'Account', semConta: 'No account', de: 'From', para: 'To', valorRecebido: 'Amount received ({m})', valorRecebidoDica: 'The accounts use different currencies.', parcelas: 'Instalments', parcelasDica: 'Splits the amount into monthly card instalments.', viagem: 'Trip', semViagem: 'None', apagarParcelas: 'Delete all instalments', ajusteSaldo: 'balance adjustment', parcela: 'instalment {n}/{t}' });
+
+Object.assign(pt.visao, { atencaoSub: '{n} categorias perto ou acima do limite', atencaoSub1: '1 categoria perto ou acima do limite', excessoTotal: '{v} acima do previsto', deLimite: 'de {v}', sit: { acima: 'Acima', limite: 'No limite', perto: 'Perto do limite' }, verOrcamento: 'Ver orçamento',  patrimonio: 'Patrimônio líquido', tenho: 'Tenho', devo: 'Devo', proximos: 'Próximos 7 dias', nadaVence: 'Nada vence nos próximos 7 dias.', verContas: 'Ver contas →', vence: 'vence {d}', venceu: 'venceu {d}', fatura: 'Fatura {n}', configurarContas: 'Cadastre suas contas para ver o patrimônio total →' });
+Object.assign(de.visao, { atencaoSub: '{n} Kategorien nahe am oder über dem Limit', atencaoSub1: '1 Kategorie nahe am oder über dem Limit', excessoTotal: '{v} über Plan', deLimite: 'von {v}', sit: { acima: 'Überschritten', limite: 'Am Limit', perto: 'Fast am Limit' }, verOrcamento: 'Zum Budget',  patrimonio: 'Nettovermögen', tenho: 'Vermögen', devo: 'Schulden', proximos: 'Nächste 7 Tage', nadaVence: 'In den nächsten 7 Tagen ist nichts fällig.', verContas: 'Zu den Konten →', vence: 'fällig {d}', venceu: 'fällig seit {d}', fatura: 'Abrechnung {n}', configurarContas: 'Lege deine Konten an, um dein Gesamtvermögen zu sehen →' });
+Object.assign(en.visao, { atencaoSub: '{n} categories near or over limit', atencaoSub1: '1 category near or over limit', excessoTotal: '{v} over plan', deLimite: 'of {v}', sit: { acima: 'Over', limite: 'At limit', perto: 'Near limit' }, verOrcamento: 'See budget',  patrimonio: 'Net worth', tenho: 'Assets', devo: 'Debts', proximos: 'Next 7 days', nadaVence: 'Nothing due in the next 7 days.', verContas: 'See accounts →', vence: 'due {d}', venceu: 'overdue since {d}', fatura: '{n} statement', configurarContas: 'Add your accounts to see your total net worth →' });
+
+Object.assign(pt.orc, { dedutivel: 'Dedutível no imposto', dedutivelDica: 'Aparece no relatório anual, na parte de despesas dedutíveis.' });
+Object.assign(de.orc, { dedutivel: 'Steuerlich absetzbar', dedutivelDica: 'Erscheint im Jahresbericht bei den absetzbaren Ausgaben.' });
+Object.assign(en.orc, { dedutivel: 'Tax-deductible', dedutivelDica: 'Shows up in the annual report under deductible expenses.' });
+pt.rec.conta = 'Conta'; de.rec.conta = 'Konto'; en.rec.conta = 'Account';
+pt.imp.conta = 'Conta do extrato'; de.imp.conta = 'Konto des Auszugs'; en.imp.conta = 'Statement account';
+
+pt.contas = { descPagamento: 'Fatura {n} · {m}',
+  titulo: 'Contas', liquido: 'Patrimônio líquido', tenho: 'Tenho', devo: 'Devo', evolucao: 'Últimos 12 meses', nova: 'Nova conta',
+  vazio: 'Cadastre suas contas — Girokonto, dinheiro, investimentos, cartões e dívidas — para ver quanto você tem de verdade.', vazioTitulo: 'Nenhuma conta ainda',
+  grupos: { corrente: 'Contas e dinheiro', rendimento: 'Contas de rendimento', investimento: 'Investimentos', cartao: 'Cartões de crédito', divida: 'Dívidas' },
+  tipos: { corrente: 'Conta corrente', dinheiro: 'Dinheiro', investimento: 'Investimento', divida: 'Dívida', cartao: 'Cartão de crédito' },
+  novaTitulo: 'Nova conta', editarTitulo: 'Editar conta', nome: 'Nome', exNome: 'Ex.: Girokonto Sparkasse', instituicao: 'Banco ou instituição', tipo: 'Tipo',
+  saldoInicial: 'Saldo atual', valorDevido: 'Valor devido', faturaAberta: 'Já gasto no cartão (opcional)', saldoEm: 'Saldo em', saldoEmDica: 'Lançamentos a partir desta data mudam o saldo.',
+  limite: 'Limite', fechamento: 'Dia do fechamento', vencimento: 'Dia do vencimento', pagarCom: 'Paga com', nenhuma: 'Nenhuma', cor: 'Cor',
+  arquivar: 'Arquivar conta', reativar: 'Reativar', arquivadas: 'Arquivadas', apagar: 'Apagar conta', apagarConf: 'Apagar a conta?', deNome: 'Dê um nome à conta',
+  salva: 'Conta salva', criada: 'Conta criada', apagada: 'Conta apagada', saldo: 'Saldo', transferir: 'Transferir', ajustar: 'Ajustar saldo', atualizarValor: 'Atualizar valor',
+  ajustarTitulo: 'Ajustar saldo de “{n}”', novoSaldo: 'Saldo real', ajustarDica: 'Informe o saldo do extrato (ou o valor atual do investimento). A diferença entra como ajuste, sem contar como receita ou despesa.',
+  ajustado: 'Saldo ajustado', semAjuste: 'O saldo já está certo.', movimentos: 'Movimentações', semMov: 'Nenhuma movimentação neste mês.', abrir: 'Abrir', jurosMes: 'juros do mês {v}',
+  usado: 'Usado', disponivel: 'Disponível', faturaAtual: 'Fatura atual', fecha: 'fecha {d}', vence: 'vence {d}', faturas: 'Faturas', semFaturas: 'Nenhuma compra no cartão ainda.',
+  estadoFatura: { aberta: 'Aberta', fechada: 'Fechada', paga: 'Paga', vencida: 'Vencida', vazia: '—' }, pagar: 'Pagar fatura', pagarTitulo: 'Pagar fatura {m}',
+  valorPagar: 'Valor', pagamentoOk: 'Pagamento registrado', aPagar: 'A pagar: {v} até {d}', compras: '{n} compras', pago: 'pago {v}', limiteUsado: '{p}% do limite',
+  dividaDica: 'Para pagar uma parcela da dívida, faça uma transferência da sua conta para ela.', cartaoDica: 'As compras no cartão contam no orçamento na data da compra. Pagar a fatura é uma transferência, para não contar duas vezes.',
+};
+de.contas = { descPagamento: 'Abrechnung {n} · {m}',
+  titulo: 'Konten', liquido: 'Nettovermögen', tenho: 'Vermögen', devo: 'Schulden', evolucao: 'Letzte 12 Monate', nova: 'Neues Konto',
+  vazio: 'Lege deine Konten an — Girokonto, Bargeld, Depots, Kreditkarten und Kredite —, um zu sehen, wie viel du wirklich hast.', vazioTitulo: 'Noch keine Konten',
+  grupos: { corrente: 'Konten und Bargeld', rendimento: 'Zinskonten', investimento: 'Geldanlagen', cartao: 'Kreditkarten', divida: 'Kredite' },
+  tipos: { corrente: 'Girokonto', dinheiro: 'Bargeld', investimento: 'Geldanlage', divida: 'Kredit', cartao: 'Kreditkarte' },
+  novaTitulo: 'Neues Konto', editarTitulo: 'Konto bearbeiten', nome: 'Name', exNome: 'z. B. Girokonto Sparkasse', instituicao: 'Bank oder Institut', tipo: 'Art',
+  saldoInicial: 'Aktueller Saldo', valorDevido: 'Offener Betrag', faturaAberta: 'Bereits auf der Karte ausgegeben (optional)', saldoEm: 'Saldo am', saldoEmDica: 'Buchungen ab diesem Datum verändern den Saldo.',
+  limite: 'Limit', fechamento: 'Abrechnungstag', vencimento: 'Fälligkeitstag', pagarCom: 'Bezahlt von', nenhuma: 'Keins', cor: 'Farbe',
+  arquivar: 'Konto archivieren', reativar: 'Reaktivieren', arquivadas: 'Archiviert', apagar: 'Konto löschen', apagarConf: 'Konto löschen?', deNome: 'Gib dem Konto einen Namen',
+  salva: 'Konto gespeichert', criada: 'Konto angelegt', apagada: 'Konto gelöscht', saldo: 'Saldo', transferir: 'Umbuchen', ajustar: 'Saldo korrigieren', atualizarValor: 'Wert aktualisieren',
+  ajustarTitulo: 'Saldo von „{n}“ korrigieren', novoSaldo: 'Tatsächlicher Saldo', ajustarDica: 'Trage den Saldo laut Auszug (oder den aktuellen Depotwert) ein. Die Differenz wird als Korrektur gebucht, nicht als Einnahme oder Ausgabe.',
+  ajustado: 'Saldo korrigiert', semAjuste: 'Der Saldo stimmt bereits.', movimentos: 'Bewegungen', semMov: 'Keine Bewegungen in diesem Monat.', abrir: 'Öffnen', jurosMes: 'Zinsen im Monat {v}',
+  usado: 'Genutzt', disponivel: 'Verfügbar', faturaAtual: 'Aktuelle Abrechnung', fecha: 'Abrechnung {d}', vence: 'fällig {d}', faturas: 'Abrechnungen', semFaturas: 'Noch keine Kartenumsätze.',
+  estadoFatura: { aberta: 'Offen', fechada: 'Abgerechnet', paga: 'Bezahlt', vencida: 'Überfällig', vazia: '—' }, pagar: 'Abrechnung bezahlen', pagarTitulo: 'Abrechnung {m} bezahlen',
+  valorPagar: 'Betrag', pagamentoOk: 'Zahlung erfasst', aPagar: 'Zu zahlen: {v} bis {d}', compras: '{n} Umsätze', pago: 'bezahlt {v}', limiteUsado: '{p} % des Limits',
+  dividaDica: 'Um eine Rate zu zahlen, buche von deinem Konto auf den Kredit um.', cartaoDica: 'Kartenumsätze zählen am Kaufdatum zum Budget. Das Bezahlen der Abrechnung ist eine Umbuchung, damit nichts doppelt zählt.',
+};
+en.contas = { descPagamento: '{n} statement · {m}',
+  titulo: 'Accounts', liquido: 'Net worth', tenho: 'Assets', devo: 'Debts', evolucao: 'Last 12 months', nova: 'New account',
+  vazio: 'Add your accounts — current account, cash, investments, cards and loans — to see what you really have.', vazioTitulo: 'No accounts yet',
+  grupos: { corrente: 'Accounts and cash', rendimento: 'Savings accounts', investimento: 'Investments', cartao: 'Credit cards', divida: 'Loans' },
+  tipos: { corrente: 'Current account', dinheiro: 'Cash', investimento: 'Investment', divida: 'Loan', cartao: 'Credit card' },
+  novaTitulo: 'New account', editarTitulo: 'Edit account', nome: 'Name', exNome: 'e.g. Sparkasse current account', instituicao: 'Bank or institution', tipo: 'Type',
+  saldoInicial: 'Current balance', valorDevido: 'Amount owed', faturaAberta: 'Already spent on the card (optional)', saldoEm: 'Balance on', saldoEmDica: 'Transactions from this date change the balance.',
+  limite: 'Limit', fechamento: 'Statement day', vencimento: 'Due day', pagarCom: 'Paid from', nenhuma: 'None', cor: 'Colour',
+  arquivar: 'Archive account', reativar: 'Reactivate', arquivadas: 'Archived', apagar: 'Delete account', apagarConf: 'Delete the account?', deNome: 'Give the account a name',
+  salva: 'Account saved', criada: 'Account created', apagada: 'Account deleted', saldo: 'Balance', transferir: 'Transfer', ajustar: 'Adjust balance', atualizarValor: 'Update value',
+  ajustarTitulo: 'Adjust “{n}” balance', novoSaldo: 'Actual balance', ajustarDica: 'Enter the statement balance (or the investment’s current value). The difference is recorded as an adjustment, not as income or expense.',
+  ajustado: 'Balance adjusted', semAjuste: 'The balance is already right.', movimentos: 'Activity', semMov: 'No activity this month.', abrir: 'Open', jurosMes: 'interest this month {v}',
+  usado: 'Used', disponivel: 'Available', faturaAtual: 'Current statement', fecha: 'closes {d}', vence: 'due {d}', faturas: 'Statements', semFaturas: 'No card purchases yet.',
+  estadoFatura: { aberta: 'Open', fechada: 'Closed', paga: 'Paid', vencida: 'Overdue', vazia: '—' }, pagar: 'Pay statement', pagarTitulo: 'Pay {m} statement',
+  valorPagar: 'Amount', pagamentoOk: 'Payment recorded', aPagar: 'To pay: {v} by {d}', compras: '{n} purchases', pago: 'paid {v}', limiteUsado: '{p}% of limit',
+  dividaDica: 'To pay an instalment, transfer from your account to the loan.', cartaoDica: 'Card purchases count towards the budget on the purchase date. Paying the statement is a transfer, so nothing is counted twice.',
+};
+
+pt.viag = {
+  titulo: 'Viagens', sub: 'Um orçamento para cada viagem, com gastos em qualquer moeda.', nova: 'Nova viagem', vazioTitulo: 'Nenhuma viagem ainda',
+  vazio: 'Crie a viagem com o orçamento. Ao lançar um gasto, escolha a viagem: o app soma tudo na moeda da viagem pelo câmbio do dia.',
+  gasto: 'Gasto', de: 'de', restante: 'Sobram {v}', passou: 'Passou {v} do previsto', porDia: 'Pode gastar {v} por dia', fase: { futura: 'Em breve', 'em-andamento': 'Agora', encerrada: 'Encerrada' },
+  estado: { ok: 'Dentro', alerta: 'Atenção', estourado: 'Estourado', 'sem-orcamento': 'Sem orçamento' }, porMoeda: 'Pago em', porCategoria: 'Por categoria', lancamentos: 'Gastos',
+  semGastos: 'Nenhum gasto nesta viagem ainda.', novaTitulo: 'Nova viagem', editarTitulo: 'Editar viagem', nome: 'Destino ou nome', exNome: 'Ex.: Rio de Janeiro',
+  orcamento: 'Orçamento', inicio: 'Ida', fim: 'Volta', cambioNota: 'Valores convertidos pelo câmbio do dia de cada gasto.', dica: 'Para somar um gasto, escolha a viagem ao lançar.',
+  apagar: 'Apagar viagem', apagarConf: 'Apagar? Os gastos continuam nos lançamentos.', arquivar: 'Arquivar', reativar: 'Reativar', arquivadas: 'Arquivadas',
+  salva: 'Viagem salva', apagada: 'Viagem apagada', deNome: 'Dê um nome à viagem', dias: '{n} dias', adicionarGasto: 'Adicionar gasto',
+};
+de.viag = {
+  titulo: 'Reisen', sub: 'Ein Budget pro Reise, mit Ausgaben in jeder Währung.', nova: 'Neue Reise', vazioTitulo: 'Noch keine Reisen',
+  vazio: 'Lege die Reise mit Budget an. Wähle beim Buchen die Reise: Die App rechnet alles zum Tageskurs in die Reisewährung um.',
+  gasto: 'Ausgegeben', de: 'von', restante: 'Noch {v}', passou: '{v} über dem Plan', porDia: 'Noch {v} pro Tag', fase: { futura: 'Bald', 'em-andamento': 'Jetzt', encerrada: 'Beendet' },
+  estado: { ok: 'Im Rahmen', alerta: 'Achtung', estourado: 'Überschritten', 'sem-orcamento': 'Ohne Budget' }, porMoeda: 'Bezahlt in', porCategoria: 'Nach Kategorie', lancamentos: 'Ausgaben',
+  semGastos: 'Noch keine Ausgaben für diese Reise.', novaTitulo: 'Neue Reise', editarTitulo: 'Reise bearbeiten', nome: 'Ziel oder Name', exNome: 'z. B. Rio de Janeiro',
+  orcamento: 'Budget', inicio: 'Hinreise', fim: 'Rückreise', cambioNota: 'Umgerechnet zum Tageskurs jeder Ausgabe.', dica: 'Wähle beim Buchen die Reise, um eine Ausgabe hinzuzufügen.',
+  apagar: 'Reise löschen', apagarConf: 'Löschen? Die Ausgaben bleiben in den Buchungen.', arquivar: 'Archivieren', reativar: 'Reaktivieren', arquivadas: 'Archiviert',
+  salva: 'Reise gespeichert', apagada: 'Reise gelöscht', deNome: 'Gib der Reise einen Namen', dias: '{n} Tage', adicionarGasto: 'Ausgabe hinzufügen',
+};
+en.viag = {
+  titulo: 'Trips', sub: 'A budget for each trip, with spending in any currency.', nova: 'New trip', vazioTitulo: 'No trips yet',
+  vazio: 'Create the trip with its budget. When you add an expense, pick the trip: the app adds everything up in the trip’s currency at each day’s rate.',
+  gasto: 'Spent', de: 'of', restante: '{v} left', passou: '{v} over plan', porDia: 'You can spend {v} a day', fase: { futura: 'Upcoming', 'em-andamento': 'Now', encerrada: 'Ended' },
+  estado: { ok: 'On track', alerta: 'Watch', estourado: 'Over', 'sem-orcamento': 'No budget' }, porMoeda: 'Paid in', porCategoria: 'By category', lancamentos: 'Expenses',
+  semGastos: 'No expenses on this trip yet.', novaTitulo: 'New trip', editarTitulo: 'Edit trip', nome: 'Destination or name', exNome: 'e.g. Rio de Janeiro',
+  orcamento: 'Budget', inicio: 'Departure', fim: 'Return', cambioNota: 'Converted at each expense’s daily rate.', dica: 'To add an expense, pick the trip when you record it.',
+  apagar: 'Delete trip', apagarConf: 'Delete? The expenses stay in your transactions.', arquivar: 'Archive', reativar: 'Reactivate', arquivadas: 'Archived',
+  salva: 'Trip saved', apagada: 'Trip deleted', deNome: 'Give the trip a name', dias: '{n} days', adicionarGasto: 'Add expense',
+};
+
+pt.rel = {
+  titulo: 'Relatório anual', entradas: 'Entradas', saidas: 'Saídas', rendimentos: 'Rendimentos', saldo: 'Saldo', porMes: 'Mês a mês', despesasCat: 'Despesas por categoria',
+  receitasCat: 'Receitas por categoria', total: 'Total', media: 'Média/mês', dedutiveis: 'Despesas dedutíveis', dedutiveisDica: 'Categorias marcadas como “dedutível no imposto” em Orçamento. Útil para a Steuererklärung.',
+  semDedutiveis: 'Nenhuma despesa dedutível neste ano. Marque as categorias em Orçamento → categoria → “Dedutível no imposto”.', exportar: 'Exportar CSV', exportarDed: 'Exportar dedutíveis',
+  semDados: 'Nenhum lançamento neste ano.', rendimentosNota: 'Juros das contas de rendimento, já incluídos no patrimônio.', moeda: 'Valores em {m}',
+};
+de.rel = {
+  titulo: 'Jahresbericht', entradas: 'Einnahmen', saidas: 'Ausgaben', rendimentos: 'Zinsen', saldo: 'Saldo', porMes: 'Monat für Monat', despesasCat: 'Ausgaben nach Kategorie',
+  receitasCat: 'Einnahmen nach Kategorie', total: 'Gesamt', media: 'Ø/Monat', dedutiveis: 'Absetzbare Ausgaben', dedutiveisDica: 'Kategorien, die im Budget als „steuerlich absetzbar“ markiert sind. Praktisch für die Steuererklärung.',
+  semDedutiveis: 'Keine absetzbaren Ausgaben in diesem Jahr. Markiere Kategorien unter Budget → Kategorie → „Steuerlich absetzbar“.', exportar: 'CSV exportieren', exportarDed: 'Absetzbares exportieren',
+  semDados: 'Keine Buchungen in diesem Jahr.', rendimentosNota: 'Zinsen der Zinskonten, bereits im Vermögen enthalten.', moeda: 'Beträge in {m}',
+};
+en.rel = {
+  titulo: 'Annual report', entradas: 'Income', saidas: 'Expenses', rendimentos: 'Interest', saldo: 'Balance', porMes: 'Month by month', despesasCat: 'Expenses by category',
+  receitasCat: 'Income by category', total: 'Total', media: 'Avg/month', dedutiveis: 'Deductible expenses', dedutiveisDica: 'Categories marked “tax-deductible” under Budget. Handy for your tax return.',
+  semDedutiveis: 'No deductible expenses this year. Mark categories under Budget → category → “Tax-deductible”.', exportar: 'Export CSV', exportarDed: 'Export deductibles',
+  semDados: 'No transactions this year.', rendimentosNota: 'Interest from savings accounts, already part of net worth.', moeda: 'Amounts in {m}',
+};
+
+pt.mais = { titulo: 'Mais', recorrentes: 'Contas fixas e salário que entram todo mês', viagens: 'Orçamento por viagem, em qualquer moeda', relatorio: 'O ano inteiro, por mês e categoria, com dedutíveis', lembretes: 'Lembretes', lembretesDesc: 'Avisos no celular antes de vencer', ajustes: 'Idioma, aparência e backup' };
+de.mais = { titulo: 'Mehr', recorrentes: 'Fixkosten und Gehalt, die jeden Monat kommen', viagens: 'Budget pro Reise, in jeder Währung', relatorio: 'Das ganze Jahr nach Monat und Kategorie, mit Absetzbarem', lembretes: 'Erinnerungen', lembretesDesc: 'Hinweise aufs Handy vor Fälligkeiten', ajustes: 'Sprache, Darstellung und Backup' };
+en.mais = { titulo: 'More', recorrentes: 'Fixed bills and salary that come every month', viagens: 'A budget per trip, in any currency', relatorio: 'The whole year by month and category, with deductibles', lembretes: 'Reminders', lembretesDesc: 'Phone alerts before things are due', ajustes: 'Language, appearance and backup' };
+
+pt.lemb = {
+  titulo: 'Lembretes no celular', oque: 'Você recebe aviso de contas recorrentes e faturas de cartão a vencer, e quando uma categoria passa do alerta do orçamento. Os avisos chegam entre 8h e 21h.',
+  ativar: 'Ativar notificações', ativas: 'Notificações ativas neste aparelho', desativar: 'Desativar', teste: 'Enviar teste', testeOk: 'Teste enviado',
+  naoSuporta: 'Este navegador não recebe notificações.', iphone: 'No iPhone, as notificações funcionam com o app instalado: no Safari, toque em Compartilhar → Adicionar à Tela de Início e abra o app por lá.',
+  negado: 'As notificações estão bloqueadas. Libere em Ajustes do iPhone → Notificações → Finanças.', dias: 'Avisar', diasOp: { 0: 'No dia', 1: '1 dia antes', 2: '2 dias antes', 3: '3 dias antes' },
+  demo: 'Na demonstração as notificações ficam desligadas.', ativadas: 'Notificações ativadas', desativadas: 'Notificações desativadas', erro: 'Não foi possível ativar as notificações.',
+};
+de.lemb = {
+  titulo: 'Erinnerungen aufs Handy', oque: 'Du wirst an fällige Daueraufträge und Kreditkartenabrechnungen erinnert und wenn eine Kategorie die Budgetwarnung überschreitet. Hinweise kommen zwischen 8 und 21 Uhr.',
+  ativar: 'Benachrichtigungen aktivieren', ativas: 'Benachrichtigungen auf diesem Gerät aktiv', desativar: 'Deaktivieren', teste: 'Test senden', testeOk: 'Test gesendet',
+  naoSuporta: 'Dieser Browser kann keine Benachrichtigungen empfangen.', iphone: 'Auf dem iPhone funktionieren Benachrichtigungen mit der installierten App: in Safari auf Teilen → Zum Home-Bildschirm tippen und die App von dort öffnen.',
+  negado: 'Benachrichtigungen sind blockiert. Erlaube sie unter Einstellungen → Mitteilungen → Finanzen.', dias: 'Erinnern', diasOp: { 0: 'Am Tag', 1: '1 Tag vorher', 2: '2 Tage vorher', 3: '3 Tage vorher' },
+  demo: 'In der Demo sind Benachrichtigungen ausgeschaltet.', ativadas: 'Benachrichtigungen aktiviert', desativadas: 'Benachrichtigungen deaktiviert', erro: 'Benachrichtigungen konnten nicht aktiviert werden.',
+};
+en.lemb = {
+  titulo: 'Phone reminders', oque: 'You’ll be reminded of upcoming recurring bills and card statements, and when a category passes its budget alert. Reminders arrive between 8 am and 9 pm.',
+  ativar: 'Turn on notifications', ativas: 'Notifications on for this device', desativar: 'Turn off', teste: 'Send test', testeOk: 'Test sent',
+  naoSuporta: 'This browser can’t receive notifications.', iphone: 'On iPhone, notifications work with the installed app: in Safari tap Share → Add to Home Screen, then open the app from there.',
+  negado: 'Notifications are blocked. Allow them in iPhone Settings → Notifications → Finances.', dias: 'Remind me', diasOp: { 0: 'On the day', 1: '1 day before', 2: '2 days before', 3: '3 days before' },
+  demo: 'Notifications are off in the demo.', ativadas: 'Notifications turned on', desativadas: 'Notifications turned off', erro: 'Couldn’t turn on notifications.',
+};
 
 const DICS = { pt, de, en };
 

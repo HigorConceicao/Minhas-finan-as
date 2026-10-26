@@ -10,16 +10,24 @@ import Orcamento from './components/Orcamento.jsx';
 import Recorrentes from './components/Recorrentes.jsx';
 import Rendimento from './components/Rendimento.jsx';
 import Metas from './components/Metas.jsx';
+import Contas from './components/Contas.jsx';
+import Viagens from './components/Viagens.jsx';
+import Relatorio from './components/Relatorio.jsx';
+import Mais from './components/Mais.jsx';
+import { ProvedorDados } from './dados.jsx';
 
 const DEMO = import.meta.env.MODE === 'demo';
 const ABAS = [
   { id: 'visao', icone: 'inicio' },
   { id: 'lancamentos', icone: 'lista' },
   { id: 'orcamento', icone: 'orcamento' },
-  { id: 'recorrentes', icone: 'recorrente' },
-  { id: 'rendimento', icone: 'rendimento' },
+  { id: 'contas', icone: 'carteira' },
   { id: 'metas', icone: 'meta' },
+  { id: 'mais', icone: 'grade' },
 ];
+// telas que ficam "dentro" de uma aba (a aba-mãe fica destacada e aparece o botão de voltar)
+const SUB = { rendimento: 'contas', recorrentes: 'mais', viagens: 'mais', relatorio: 'mais' };
+const ROTAS = new Set([...ABAS.map((a) => a.id), ...Object.keys(SUB)]);
 
 const lerPref = (k, padrao) => { try { return localStorage.getItem(k) || padrao; } catch { return padrao; } };
 const gravarPref = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
@@ -57,7 +65,7 @@ function Porteiro() {
   }, []);
   if (estado === 'verificando') return <Carregando />;
   if (estado === 'login') return <Login aoEntrar={() => setEstado('ok')} />;
-  return <Painel protegido={protegido} aoSair={() => { sessao.token = null; setEstado('login'); }} />;
+  return <ProvedorDados><Painel protegido={protegido} aoSair={() => { sessao.token = null; setEstado('login'); }} /></ProvedorDados>;
 }
 
 function Login({ aoEntrar }) {
@@ -132,7 +140,7 @@ function Painel({ protegido, aoSair }) {
   const t = useT();
   const avisar = useAviso();
   const { idioma } = useIdioma();
-  const hashValido = () => { const h = location.hash.slice(1); return ABAS.some((a) => a.id === h) ? h : 'visao'; };
+  const hashValido = () => { const h = location.hash.slice(1); return ROTAS.has(h) ? h : 'visao'; };
   const [aba, setAbaEstado] = useState(hashValido);
   const [mes, setMes] = useState(mesAtual());
   const [base, setBaseEstado] = useState(() => lerPref('mf2-base', 'EUR'));
@@ -158,6 +166,7 @@ function Painel({ protegido, aoSair }) {
     if (aba === 'visao' || aba === 'orcamento') { setResumo(null); carregarResumo().catch((e) => avisar(e.message, 'erro')); }
   }, [aba, carregarResumo, avisar]);
 
+  const abaMae = SUB[aba] || aba;
   const novoLancamento = () => { setAba('lancamentos'); setNovoSinal(1); };
   const consumirNovo = useCallback(() => setNovoSinal(0), []);
 
@@ -176,8 +185,8 @@ function Painel({ protegido, aoSair }) {
         </div>
         <nav className="hidden gap-1 px-5 pb-3 sm:flex">
           {ABAS.map((a) => (
-            <button key={a.id} onClick={() => setAba(a.id)} aria-current={aba === a.id ? 'page' : undefined}
-              className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${aba === a.id ? 'bg-texto text-cartao' : 'text-texto-2 hover:bg-cartao hover:text-texto'}`}>
+            <button key={a.id} onClick={() => setAba(a.id)} aria-current={abaMae === a.id ? 'page' : undefined}
+              className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${abaMae === a.id ? 'bg-texto text-cartao' : 'text-texto-2 hover:bg-cartao hover:text-texto'}`}>
               <Icone nome={a.icone} className="h-4 w-4" />{t(`abas.${a.id}`)}
             </button>
           ))}
@@ -189,9 +198,18 @@ function Painel({ protegido, aoSair }) {
         {aba === 'visao' && <Visao mes={mes} setMes={setMes} base={base} setBase={setBase} resumo={resumo} irPara={setAba} novoLancamento={novoLancamento} />}
         {aba === 'lancamentos' && <Lancamentos mes={mes} setMes={setMes} categorias={categorias} novoSinal={novoSinal} aoConsumirNovo={consumirNovo} />}
         {aba === 'orcamento' && <Orcamento mes={mes} setMes={setMes} base={base} resumo={resumo} categorias={categorias} recarregar={recarregarTudo} />}
-        {aba === 'recorrentes' && <Recorrentes categorias={categorias} />}
+        {SUB[aba] && (
+          <button className="mb-3 -ml-1 flex items-center gap-1 rounded-full px-2 py-1 text-sm font-semibold text-marca hover:bg-marca-suave" onClick={() => setAba(SUB[aba])}>
+            <Icone nome="esquerda" className="h-4 w-4" forte />{t(`abas.${SUB[aba]}`)}
+          </button>
+        )}
+        {aba === 'contas' && <Contas base={base} categorias={categorias} irPara={setAba} />}
         {aba === 'rendimento' && <Rendimento />}
         {aba === 'metas' && <Metas />}
+        {aba === 'mais' && <Mais irPara={setAba} abrirAjustes={() => setAjustes(true)} />}
+        {aba === 'recorrentes' && <Recorrentes categorias={categorias} />}
+        {aba === 'viagens' && <Viagens categorias={categorias} />}
+        {aba === 'relatorio' && <Relatorio base={base === 'USD' ? 'EUR' : base} setBase={setBase} />}
       </main>
 
       {/* barra inferior no celular */}
@@ -199,9 +217,9 @@ function Painel({ protegido, aoSair }) {
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', paddingLeft: 'env(safe-area-inset-left, 0px)', paddingRight: 'env(safe-area-inset-right, 0px)' }}>
         <div className="grid grid-cols-6">
           {ABAS.map((a) => (
-            <button key={a.id} onClick={() => setAba(a.id)} aria-current={aba === a.id ? 'page' : undefined}
-              className={`flex min-w-0 flex-col items-center gap-1 py-2.5 text-[10.5px] font-semibold ${aba === a.id ? 'text-marca' : 'text-texto-3'}`}>
-              <span className={`grid h-8 w-11 place-items-center rounded-full transition ${aba === a.id ? 'bg-marca-suave' : ''}`}><Icone nome={a.icone} className="h-5 w-5" forte={aba === a.id} /></span>
+            <button key={a.id} onClick={() => setAba(a.id)} aria-current={abaMae === a.id ? 'page' : undefined}
+              className={`flex min-w-0 flex-col items-center gap-1 py-2.5 text-[10.5px] font-semibold ${abaMae === a.id ? 'text-marca' : 'text-texto-3'}`}>
+              <span className={`grid h-8 w-11 place-items-center rounded-full transition ${abaMae === a.id ? 'bg-marca-suave' : ''}`}><Icone nome={a.icone} className="h-5 w-5" forte={abaMae === a.id} /></span>
               {t(`abasCurto.${a.id}`)}
             </button>
           ))}
