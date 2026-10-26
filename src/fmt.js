@@ -25,6 +25,8 @@ export const mesCurto = (m) => {
   return `${primeiraMaiuscula(nome)}/${m.slice(2, 4)}`;
 };
 export const mesLongo = (m) => primeiraMaiuscula(new Intl.DateTimeFormat(LOC, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(dataDoMes(m)));
+/** Mês dentro de uma frase: minúsculo em português ("até abril de 2029"), como manda cada idioma nos outros */
+export const mesNaFrase = (m) => { const s = mesLongo(m); return LOC.startsWith('pt') ? s.charAt(0).toLocaleLowerCase(LOC) + s.slice(1) : s; };
 export const mesSoNome = (m) => primeiraMaiuscula(new Intl.DateTimeFormat(LOC, { month: 'long', timeZone: 'UTC' }).format(dataDoMes(m)));
 export const data = (d) => primeiraMaiuscula(new Intl.DateTimeFormat(LOC, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(d)));
 export const dataCurta = (d) => new Intl.DateTimeFormat(LOC, { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(d));

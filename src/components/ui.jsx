@@ -3,7 +3,7 @@ import { mesLongo, somarMes } from '../fmt.js';
 import { useT } from '../i18n.js';
 import Icone from './Icones.jsx';
 
-export function Modal({ titulo, aberto, aoFechar, children, rodape }) {
+export function Modal({ titulo, aberto, aoFechar, children, rodape, largo }) {
   const t = useT();
   useEffect(() => {
     if (!aberto) return;
@@ -19,8 +19,8 @@ export function Modal({ titulo, aberto, aoFechar, children, rodape }) {
         role="dialog"
         aria-modal="true"
         aria-label={titulo}
-        className="animar-subir max-h-[92vh] w-full overflow-y-auto rounded-t-4xl bg-cartao px-5 pt-3 shadow-flutua sm:max-w-lg sm:rounded-4xl sm:pt-5"
-        style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+        className={`animar-subir max-h-[92vh] w-full overflow-y-auto rounded-t-4xl bg-cartao px-5 pt-3 shadow-flutua sm:rounded-4xl sm:pt-5 ${largo ? 'sm:max-w-3xl' : 'sm:max-w-lg'}`}
+        style={{ paddingBottom: rodape ? 0 : 'max(1.5rem, env(safe-area-inset-bottom))' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-linha sm:hidden" aria-hidden />
@@ -31,19 +31,25 @@ export function Modal({ titulo, aberto, aoFechar, children, rodape }) {
           </button>
         </div>
         {children}
-        {rodape && <div className="mt-6 flex flex-wrap justify-end gap-2">{rodape}</div>}
+        {rodape && (
+          <div className="sticky bottom-0 -mx-5 mt-6 flex flex-wrap justify-end gap-2 border-t border-linha bg-cartao px-5 pt-4" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>{rodape}</div>
+        )}
       </div>
     </div>
   );
 }
 
-export const Campo = ({ rotulo, dica, children, className = '' }) => (
-  <label className={`block ${className}`}>
-    <span className="rotulo mb-1.5 block">{rotulo}</span>
-    {children}
-    {dica && <span className="mt-1.5 block text-xs text-texto-3">{dica}</span>}
-  </label>
-);
+/** Rótulo + campo. Com `grupo`, vira um grupo (para botões), para o rótulo não virar o nome do primeiro botão. */
+export const Campo = ({ rotulo, dica, children, className = '', grupo }) => {
+  const Tag = grupo ? 'div' : 'label';
+  return (
+    <Tag className={`block ${className}`} {...(grupo ? { role: 'group', 'aria-label': rotulo } : {})}>
+      <span className="rotulo mb-1.5 block">{rotulo}</span>
+      {children}
+      {dica && <span className="mt-1.5 block text-xs text-texto-3">{dica}</span>}
+    </Tag>
+  );
+};
 
 /** Botões lado a lado para escolher uma opção (ex.: despesa / receita) */
 export function Segmentado({ opcoes, valor, aoMudar, className = '' }) {

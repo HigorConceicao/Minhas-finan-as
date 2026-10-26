@@ -1,4 +1,4 @@
-import { dinheiro, mesLongo, pct } from '../fmt.js';
+import { dinheiro, mesNaFrase, pct } from '../fmt.js';
 import { useT } from '../i18n.js';
 import { Barra, Carregando, IconeCategoria, SeletorMes } from './ui.jsx';
 import Icone from './Icones.jsx';
@@ -59,7 +59,7 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="cartao p-5">
           <h3 className="mb-4 text-base">{t('visao.paraOnde')}</h3>
-          {!topGastos.length ? <p className="text-sm text-texto-2">{t('visao.nenhumaDespesa', { mes: mesLongo(mes) })}</p> : (
+          {!topGastos.length ? <p className="text-sm text-texto-2">{t('visao.nenhumaDespesa', { mes: mesNaFrase(mes) })}</p> : (
             <ul className="space-y-4">
               {topGastos.map((o) => (
                 <li key={o.categoria} className="flex items-center gap-3">
@@ -105,6 +105,27 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
           )}
         </section>
       </div>
+
+      {resumo.metas?.length > 0 && (
+        <section className="cartao p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-base">{t('visao.metas')}</h3>
+            <button className="text-sm font-semibold text-marca" onClick={() => irPara('metas')}>{t('metas.verTodas')}</button>
+          </div>
+          <ul className="grid gap-4 sm:grid-cols-2">
+            {resumo.metas.slice(0, 4).map((m) => (
+              <li key={m._id} className="flex items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-lg" style={{ background: `${m.cor}1f` }}>{m.icone}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1.5 flex justify-between gap-2 text-sm"><span className="truncate font-semibold">{m.nome}</span><span className="num shrink-0 font-semibold">{Math.round(m.pct)}%</span></div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-sutil"><div className="h-full rounded-full" style={{ width: `${m.pct}%`, background: m.cor }} /></div>
+                  <p className="num mt-1 text-xs text-texto-3">{dinheiro(m.guardado, m.moeda)} / {dinheiro(m.valorAlvo, m.moeda)}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {resumo.totalOrcado > 0 && (
         <section className="cartao p-5">

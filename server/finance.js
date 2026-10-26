@@ -242,3 +242,75 @@ export function competenciasDevidas(rec, hoje = new Date()) {
       return d >= inicioStr && d <= hojeStr && (!fimStr || d <= fimStr);
     });
 }
+
+// ---------- metas de poupança ----------
+
+/** Meses inteiros entre o mês de hoje e o mês do prazo (inclui o mês atual; mínimo 1) */
+export const mesesAte = (prazo, hoje = new Date()) => {
+  const a = new Date(hoje), b = new Date(prazo);
+  return Math.max(1, (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth() + 1);
+};
+
+/**
+ * Situação de uma meta: quanto já foi guardado (total e por pessoa), quanto falta,
+ * quanto guardar por mês até o prazo, ritmo dos últimos 3 meses e quando deve ser atingida.
+ * Contribuições negativas são retiradas.
+ */
+export function metricasMeta(meta, contribuicoes, hoje = new Date()) {
+  const alvo = Number(meta.valorAlvo || 0);
+  const guardado = round2(contribuicoes.reduce((s, c) => s + Number(c.valor), 0));
+  const falta = round2(Math.max(0, alvo - guardado));
+  const pct = alvo > 0 ? round2(Math.min(100, (guardado / alvo) * 100)) : 0;
+  const concluida = alvo > 0 && guardado >= alvo;
+
+  // por pessoa (só quando a meta tem participantes)
+  const pessoas = meta.pessoas?.length ? meta.pessoas : [];
+  const porPessoa = pessoas.map((p) => {
+    const v = round2(contribuicoes.filter((c) => c.pessoa === p).reduce((s, c) => s + Number(c.valor), 0));
+    return { pessoa: p, valor: v, pct: guardado > 0 ? round2((v / guardado) * 100) : 0 };
+  });
+  const semPessoa = round2(contribuicoes.filter((c) => !pessoas.includes(c.pessoa)).reduce((s, c) => s + Number(c.valor), 0));
+  if (pessoas.length && semPessoa) porPessoa.push({ pessoa: '', valor: semPessoa, pct: guardado > 0 ? round2((semPessoa / guardado) * 100) : 0 });
+
+  // ritmo: média mensal dos últimos 3 meses (inclui o atual)
+  const mesHoje = mesDe(hoje);
+  let inicioJanela = mesHoje;
+  for (let i = 0; i < 2; i++) inicioJanela = mesAnterior(inicioJanela);
+  const naJanela = contribuicoes.filter((c) => { const m = mesDe(c.data); return m >= inicioJanela && m <= mesHoje; });
+  const ritmoMensal = round2(naJanela.reduce((s, c) => s + Number(c.valor), 0) / 3);
+
+  const mesesRestantes = meta.prazo ? mesesAte(meta.prazo, hoje) : null;
+  const prazoPassou = meta.prazo ? mesDe(meta.prazo) < mesHoje : false;
+  const porMesNecessario = meta.prazo && !concluida ? round2(falta / mesesRestantes) : null;
+
+  let previsao = null; // 'AAAA-MM' em que a meta deve ser atingida no ritmo atual
+  if (!concluida && ritmoMensal > 0) {
+    let m = mesHoje;
+    for (let n = Math.ceil(falta / ritmoMensal) - 1; n > 0 && m < '9999'; n--) m = proximoMes(m);
+    previsao = m;
+  }
+  const estado = concluida ? 'concluida'
+    : !meta.prazo ? (ritmoMensal > 0 ? 'andamento' : 'parada')
+    : prazoPassou ? 'atrasada'
+    : previsao && previsao <= mesDe(meta.prazo) ? 'no-ritmo'
+    : 'atrasada';
+
+  // guardado acumulado mês a mês (para o gráfico)
+  const ordenadas = [...contribuicoes].sort((a, b) => new Date(a.data) - new Date(b.data));
+  const serie = [];
+  if (ordenadas.length) {
+    let acum = 0, i = 0;
+    for (const m of mesesEntre(mesDe(ordenadas[0].data), mesHoje).slice(-24)) {
+      while (i < ordenadas.length && mesDe(ordenadas[i].data) <= m) acum += Number(ordenadas[i++].valor);
+      serie.push({ mes: m, guardado: round2(acum) });
+    }
+  }
+
+  return { guardado, falta, pct, concluida, porPessoa, ritmoMensal, mesesRestantes, porMesNecessario, previsao, estado, serie, quantidade: contribuicoes.length };
+}
+
+/** 'AAAA-MM' anterior */
+export const mesAnterior = (m) => {
+  const [y, mo] = m.split('-').map(Number);
+  return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
+};

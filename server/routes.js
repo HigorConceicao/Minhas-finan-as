@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
-import { Categoria, Lancamento, Recorrente, ContaRendimento, Movimento } from './models.js';
+import { Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria } from './models.js';
 import {
-  metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, SAIDAS,
+  metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
 } from './finance.js';
 import { obterTaxas, converter } from './cambio.js';
 
@@ -100,6 +100,7 @@ api.delete('/categorias/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   await Lancamento.updateMany({ categoria: req.params.id }, { categoria: null });
   await Recorrente.updateMany({ categoria: req.params.id }, { categoria: null });
+  await RegraCategoria.deleteMany({ categoria: req.params.id });
   await Categoria.findByIdAndDelete(req.params.id);
   res.status(204).end();
 }));
@@ -248,8 +249,10 @@ api.get('/resumo', wrap(async (req, res) => {
     };
   }));
 
+  const metasResumo = await resumoMetas();
+
   res.json({
-    mes, base, cambio: { fonte, data: dataCambio, taxas },
+    mes, base, cambio: { fonte, data: dataCambio, taxas }, metas: metasResumo,
     receitas: round2(receitas), despesas: round2(despesas), saldo: round2(receitas - despesas),
     quantidade: lancs.length,
     orcamentos, semCategoria, totalOrcado, gastoOrcado, fracaoDoMes: round2(fracao),
@@ -372,13 +375,149 @@ api.post('/contas/:id/aplicar-rendimento', wrap(async (req, res) => {
   res.status(201).json({ movimento: mov, base, taxaMensal: r });
 }));
 
+// ---------- metas de poupança ----------
+const camposMeta = ({ nome, icone, cor, valorAlvo, moeda, prazo, pessoas, arquivada }) =>
+  Object.fromEntries(Object.entries({
+    nome, icone, cor, valorAlvo: valorAlvo === undefined ? undefined : round2(valorAlvo), moeda,
+    prazo: prazo === undefined ? undefined : prazo || null,
+    pessoas: Array.isArray(pessoas) ? [...new Set(pessoas.map((p) => String(p).trim()).filter(Boolean))].slice(0, 6) : undefined,
+    arquivada,
+  }).filter(([, v]) => v !== undefined));
+
+async function metaComMetricas(meta) {
+  const contribs = await ContribuicaoMeta.find({ meta: meta._id }).lean();
+  return { ...meta, ...metricasMeta(meta, contribs) };
+}
+async function resumoMetas() {
+  const metas = await Meta.find({ arquivada: false }).sort({ createdAt: 1 }).lean();
+  return Promise.all(metas.map(async (m) => {
+    const x = await metaComMetricas(m);
+    return { _id: x._id, nome: x.nome, icone: x.icone, cor: x.cor, moeda: x.moeda, valorAlvo: x.valorAlvo, guardado: x.guardado, pct: x.pct, estado: x.estado, prazo: x.prazo };
+  }));
+}
+
+api.get('/metas', wrap(async (_req, res) => {
+  const metas = await Meta.find().sort({ arquivada: 1, createdAt: 1 }).lean();
+  res.json(await Promise.all(metas.map(metaComMetricas)));
+}));
+api.post('/metas', wrap(async (req, res) => {
+  const meta = await Meta.create(camposMeta(req.body));
+  // "já guardado" vira a primeira contribuição
+  const inicial = round2(Number(req.body?.jaGuardado) || 0);
+  if (inicial > 0) await ContribuicaoMeta.create({ meta: meta._id, valor: inicial, data: new Date(), pessoa: '', nota: '' });
+  res.status(201).json(await metaComMetricas(meta.toObject()));
+}));
+api.put('/metas/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const m = await Meta.findByIdAndUpdate(req.params.id, camposMeta(req.body), { new: true, runValidators: true }).lean();
+  m ? res.json(await metaComMetricas(m)) : erro(res, 404, 'Meta não encontrada');
+}));
+api.delete('/metas/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  await ContribuicaoMeta.deleteMany({ meta: req.params.id });
+  await Meta.findByIdAndDelete(req.params.id);
+  res.status(204).end();
+}));
+
+const camposContrib = ({ valor, data, pessoa, nota }) =>
+  Object.fromEntries(Object.entries({ valor: valor === undefined ? undefined : round2(valor), data, pessoa, nota }).filter(([, v]) => v !== undefined));
+
+api.get('/metas/:id/contribuicoes', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  res.json(await ContribuicaoMeta.find({ meta: req.params.id }).sort({ data: -1, createdAt: -1 }));
+}));
+api.post('/metas/:id/contribuicoes', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const meta = await Meta.findById(req.params.id).lean();
+  if (!meta) return erro(res, 404, 'Meta não encontrada');
+  const dados = camposContrib(req.body);
+  if (!dados.valor) return erro(res, 400, 'Informe um valor', 'dados_invalidos');
+  if (dados.valor < 0) {
+    const guardado = (await ContribuicaoMeta.find({ meta: meta._id }).lean()).reduce((s, c) => s + c.valor, 0);
+    if (-dados.valor > guardado + 0.001) return erro(res, 400, 'Retirada maior que o guardado', 'retirada_maior_guardado', { saldo: round2(guardado), moeda: meta.moeda });
+  }
+  await ContribuicaoMeta.create({ ...dados, meta: meta._id });
+  res.status(201).json(await metaComMetricas(meta));
+}));
+api.put('/contribuicoes/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const c = await ContribuicaoMeta.findByIdAndUpdate(req.params.id, camposContrib(req.body), { new: true, runValidators: true });
+  c ? res.json(c) : erro(res, 404, 'Não encontrado');
+}));
+api.delete('/contribuicoes/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  await ContribuicaoMeta.findByIdAndDelete(req.params.id);
+  res.status(204).end();
+}));
+
+// ---------- importação de extrato ----------
+api.get('/regras', wrap(async (_req, res) => res.json(await RegraCategoria.find().lean())));
+api.delete('/regras/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  await RegraCategoria.findByIdAndDelete(req.params.id);
+  res.status(204).end();
+}));
+
+/**
+ * Antes de importar: quais linhas já foram importadas e quais parecem repetir um lançamento existente
+ * (mesmo tipo e valor, até 3 dias de diferença — por exemplo o aluguel que já entra pela recorrência).
+ */
+api.post('/importar/previa', wrap(async (req, res) => {
+  const linhas = Array.isArray(req.body?.linhas) ? req.body.linhas.slice(0, 5000) : [];
+  const ids = linhas.map((l) => String(l.importId));
+  const ja = new Set((await Lancamento.find({ importId: { $in: ids } }, 'importId').lean()).map((l) => l.importId));
+  const datas = linhas.map((l) => new Date(`${l.data}T12:00:00Z`).getTime()).filter(Number.isFinite);
+  const possiveis = {};
+  if (datas.length) {
+    const tres = 3 * 86400000;
+    const existentes = await Lancamento.find({
+      importId: null, data: { $gte: new Date(Math.min(...datas) - tres), $lte: new Date(Math.max(...datas) + tres) },
+    }, 'tipo valor data descricao').lean();
+    for (const l of linhas) {
+      if (ja.has(String(l.importId))) continue;
+      const t = new Date(`${l.data}T12:00:00Z`).getTime();
+      const par = existentes.find((e) => e.tipo === l.tipo && Math.abs(e.valor - l.valor) < 0.005 && Math.abs(new Date(e.data).getTime() - t) <= tres);
+      if (par) possiveis[l.importId] = { descricao: par.descricao, data: par.data };
+    }
+  }
+  res.json({ jaImportados: [...ja], possiveis });
+}));
+
+api.post('/importar', wrap(async (req, res) => {
+  const linhas = Array.isArray(req.body?.linhas) ? req.body.linhas.slice(0, 5000) : [];
+  let docs = linhas.map((l) => ({
+    tipo: l.tipo === 'receita' ? 'receita' : 'despesa', descricao: String(l.descricao || '—').slice(0, 120), valor: round2(Math.abs(Number(l.valor))),
+    moeda: ['EUR', 'BRL', 'USD'].includes(l.moeda) ? l.moeda : 'EUR', data: new Date(`${l.data}T12:00:00Z`),
+    categoria: validarId(l.categoria) ? l.categoria : null, nota: String(l.nota || '').slice(0, 200), importId: String(l.importId),
+  })).filter((d) => d.valor > 0 && !Number.isNaN(d.data.getTime()));
+  // não importa de novo o que já existe (o índice único também protege, mas a checagem deixa a contagem certa)
+  const existentes = new Set((await Lancamento.find({ importId: { $in: docs.map((d) => d.importId) } }, 'importId').lean()).map((l) => l.importId));
+  const vistos = new Set();
+  const total = docs.length;
+  docs = docs.filter((d) => !existentes.has(d.importId) && !vistos.has(d.importId) && vistos.add(d.importId));
+  let criados = 0;
+  if (docs.length) try {
+    criados = (await Lancamento.insertMany(docs, { ordered: false })).length;
+  } catch (e) {
+    if (e.code !== 11000 && !e.writeErrors) throw e;
+    criados = e.insertedDocs?.length ?? e.result?.insertedCount ?? (docs.length - (e.writeErrors?.length || 0));
+  }
+  // categorias escolhidas à mão viram regras para os próximos extratos
+  const regras = (Array.isArray(req.body?.regras) ? req.body.regras : []).filter((r) => r.texto && validarId(r.categoria)).slice(0, 500);
+  for (const r of regras) {
+    await RegraCategoria.updateOne({ texto: String(r.texto).toLowerCase().trim() }, { $set: { categoria: r.categoria } }, { upsert: true });
+  }
+  res.status(201).json({ criados, ignorados: total - criados, regras: regras.length });
+}));
+
 // ---------- backup ----------
 api.get('/exportar', wrap(async (_req, res) => {
-  const [categorias, lancamentos, recorrentes, contas, movimentos] = await Promise.all([
+  const [categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras] = await Promise.all([
     Categoria.find().lean(), Lancamento.find().lean(), Recorrente.find().lean(), ContaRendimento.find().lean(), Movimento.find().lean(),
+    Meta.find().lean(), ContribuicaoMeta.find().lean(), RegraCategoria.find().lean(),
   ]);
   res.setHeader('Content-Disposition', `attachment; filename="minhas-financas-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ versao: 2, exportadoEm: new Date(), categorias, lancamentos, recorrentes, contas, movimentos });
+  res.json({ versao: 3, exportadoEm: new Date(), categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras });
 }));
 
 export default api;

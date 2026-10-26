@@ -292,6 +292,105 @@ const en = {
   demo: { aviso: 'Demo with sample data. Add, edit and delete freely: nothing is saved, and reloading the page starts over.', restaurar: 'Restore sample' },
 };
 
+
+// ---------- metas e importação ----------
+pt.abas.metas = 'Metas'; pt.abasCurto.metas = 'Metas';
+de.abas.metas = 'Sparziele'; de.abasCurto.metas = 'Ziele';
+en.abas.metas = 'Goals'; en.abasCurto.metas = 'Goals';
+pt.visao.metas = 'Metas'; de.visao.metas = 'Sparziele'; en.visao.metas = 'Goals';
+pt.erro.retirada_maior_guardado = 'Retirada maior que o valor guardado ({saldo})';
+de.erro.retirada_maior_guardado = 'Entnahme größer als der gesparte Betrag ({saldo})';
+en.erro.retirada_maior_guardado = 'Withdrawal larger than the amount saved ({saldo})';
+
+pt.metas = {
+  titulo: 'Metas', sub: 'Guarde para o que importa e veja quanto falta a cada mês.', nova: 'Nova meta',
+  nenhuma: 'Nenhuma meta ainda', vazio: 'Uma viagem, uma reserva de emergência, a entrada de um apartamento… Defina o valor e o prazo; o app mostra quanto guardar por mês.',
+  criar: 'Criar meta', de: 'de', guardar: 'Guardar', retirar: 'Retirar', faltam: 'Faltam {v}', concluida: 'Meta atingida!',
+  porMes: 'Guarde {v}/mês até {d}', semPrazo: 'Sem prazo', prazo: 'até {d}', ritmo: 'Ritmo: {v}/mês', previsao: 'No ritmo atual, atinge em {d}',
+  semRitmo: 'Nenhum depósito nos últimos 3 meses.', prazoPassou: 'O prazo já passou.',
+  estado: { 'no-ritmo': 'No ritmo', atrasada: 'Atrasada', concluida: 'Concluída', andamento: 'Em andamento', parada: 'Parada' },
+  novaTitulo: 'Nova meta', editarTitulo: 'Editar meta', nome: 'Nome', exNome: 'Ex.: Viagem de fim de ano', icone: 'Ícone', cor: 'Cor',
+  alvo: 'Valor da meta', prazoCampo: 'Prazo (opcional)', jaGuardado: 'Já guardado', jaGuardadoDica: 'Se você já começou, informe quanto já tem.',
+  pessoas: 'Quem participa (opcional)', pessoasDica: 'Para metas em conjunto: nomes separados por vírgula. Ex.: Eu, Ana', arquivar: 'Arquivar meta',
+  arquivada: 'Arquivada', reativar: 'Reativar', arquivadas: 'Arquivadas', apagar: 'Apagar meta', apagarConf: 'Apagar meta e depósitos?',
+  deNome: 'Dê um nome à meta', alvoInvalido: 'Informe o valor da meta', salva: 'Meta salva', criada: 'Meta criada', apagada: 'Meta apagada',
+  guardarTitulo: 'Guardar em “{n}”', retirarTitulo: 'Retirar de “{n}”', deposito: 'Depósito', retirada: 'Retirada', quem: 'Quem', guardado: 'Guardado {v}',
+  registrado: 'Registrado', historico: 'Histórico', semHistorico: 'Nenhum depósito ainda.', porPessoa: 'Por pessoa', semNome: 'Sem nome',
+  evolucao: 'Evolução', apagarDep: 'Apagar', verTodas: 'Ver metas →',
+};
+de.metas = {
+  titulo: 'Sparziele', sub: 'Spare für das, was zählt, und sieh jeden Monat, wie viel noch fehlt.', nova: 'Neues Ziel',
+  nenhuma: 'Noch keine Sparziele', vazio: 'Eine Reise, ein Notgroschen, die Anzahlung für eine Wohnung… Lege Betrag und Frist fest; die App zeigt, wie viel du pro Monat sparen musst.',
+  criar: 'Ziel anlegen', de: 'von', guardar: 'Sparen', retirar: 'Entnehmen', faltam: 'Noch {v}', concluida: 'Ziel erreicht!',
+  porMes: 'Spare {v}/Monat bis {d}', semPrazo: 'Ohne Frist', prazo: 'bis {d}', ritmo: 'Tempo: {v}/Monat', previsao: 'Im aktuellen Tempo erreicht im {d}',
+  semRitmo: 'Keine Einzahlung in den letzten 3 Monaten.', prazoPassou: 'Die Frist ist abgelaufen.',
+  estado: { 'no-ritmo': 'Im Plan', atrasada: 'Im Verzug', concluida: 'Erreicht', andamento: 'Läuft', parada: 'Pausiert' },
+  novaTitulo: 'Neues Sparziel', editarTitulo: 'Sparziel bearbeiten', nome: 'Name', exNome: 'z. B. Urlaub im Winter', icone: 'Symbol', cor: 'Farbe',
+  alvo: 'Zielbetrag', prazoCampo: 'Frist (optional)', jaGuardado: 'Bereits gespart', jaGuardadoDica: 'Falls du schon angefangen hast, trage den aktuellen Stand ein.',
+  pessoas: 'Wer spart mit (optional)', pessoasDica: 'Für gemeinsame Ziele: Namen mit Komma trennen. z. B. Ich, Ana', arquivar: 'Ziel archivieren',
+  arquivada: 'Archiviert', reativar: 'Reaktivieren', arquivadas: 'Archiviert', apagar: 'Ziel löschen', apagarConf: 'Ziel und Einzahlungen löschen?',
+  deNome: 'Gib dem Ziel einen Namen', alvoInvalido: 'Gib den Zielbetrag ein', salva: 'Ziel gespeichert', criada: 'Ziel angelegt', apagada: 'Ziel gelöscht',
+  guardarTitulo: 'In „{n}“ sparen', retirarTitulo: 'Aus „{n}“ entnehmen', deposito: 'Einzahlung', retirada: 'Entnahme', quem: 'Wer', guardado: 'Gespart {v}',
+  registrado: 'Erfasst', historico: 'Verlauf', semHistorico: 'Noch keine Einzahlungen.', porPessoa: 'Pro Person', semNome: 'Ohne Namen',
+  evolucao: 'Entwicklung', apagarDep: 'Löschen', verTodas: 'Zu den Zielen →',
+};
+en.metas = {
+  titulo: 'Goals', sub: 'Save for what matters and see what’s left each month.', nova: 'New goal',
+  nenhuma: 'No goals yet', vazio: 'A trip, an emergency fund, a flat deposit… Set the amount and the deadline; the app shows how much to save each month.',
+  criar: 'Create goal', de: 'of', guardar: 'Save', retirar: 'Withdraw', faltam: '{v} to go', concluida: 'Goal reached!',
+  porMes: 'Save {v}/month until {d}', semPrazo: 'No deadline', prazo: 'by {d}', ritmo: 'Pace: {v}/month', previsao: 'At this pace, reached in {d}',
+  semRitmo: 'No deposits in the last 3 months.', prazoPassou: 'The deadline has passed.',
+  estado: { 'no-ritmo': 'On track', atrasada: 'Behind', concluida: 'Done', andamento: 'In progress', parada: 'Paused' },
+  novaTitulo: 'New goal', editarTitulo: 'Edit goal', nome: 'Name', exNome: 'e.g. Winter holiday', icone: 'Icon', cor: 'Colour',
+  alvo: 'Goal amount', prazoCampo: 'Deadline (optional)', jaGuardado: 'Already saved', jaGuardadoDica: 'If you’ve already started, enter what you have.',
+  pessoas: 'Who’s saving (optional)', pessoasDica: 'For shared goals: names separated by commas. e.g. Me, Ana', arquivar: 'Archive goal',
+  arquivada: 'Archived', reativar: 'Reactivate', arquivadas: 'Archived', apagar: 'Delete goal', apagarConf: 'Delete goal and deposits?',
+  deNome: 'Give the goal a name', alvoInvalido: 'Enter the goal amount', salva: 'Goal saved', criada: 'Goal created', apagada: 'Goal deleted',
+  guardarTitulo: 'Save into “{n}”', retirarTitulo: 'Withdraw from “{n}”', deposito: 'Deposit', retirada: 'Withdrawal', quem: 'Who', guardado: 'Saved {v}',
+  registrado: 'Recorded', historico: 'History', semHistorico: 'No deposits yet.', porPessoa: 'Per person', semNome: 'Unnamed',
+  evolucao: 'Progress', apagarDep: 'Delete', verTodas: 'See goals →',
+};
+
+pt.imp = {
+  botao: 'Importar extrato', titulo: 'Importar extrato', escolher: 'Escolher arquivo CSV', soltar: 'ou arraste o arquivo para cá',
+  bancos: 'Funciona com Sparkasse, N26, ING, DKB, Commerzbank e outros bancos que exportam CSV.',
+  comoBaixar: 'No site ou app do banco: Umsätze → Exportieren → CSV.', exemplo: 'Usar extrato de exemplo',
+  lendo: 'Lendo o arquivo…', erroArquivo: 'Não consegui ler esse arquivo. Confira se é um CSV exportado pelo banco.',
+  nenhuma: 'Não encontrei lançamentos. Indique abaixo quais colunas têm a data e o valor.',
+  banco: 'Banco: {b}', bancoGenerico: 'Formato reconhecido', periodo: '{a} a {b}', resumo: '{n} lançamentos', ja: '{n} já importados', duvida: '{n} talvez repetidos',
+  colunas: 'Colunas', colData: 'Data', colValor: 'Valor', colDesc: 'Descrição', colFav: 'Favorecido', nenhumaColuna: '—',
+  moedaArquivo: 'Moeda do extrato', todas: 'Marcar todos', nenhumaSel: 'Desmarcar todos', jaImportado: 'já importado',
+  talvez: 'parece com “{d}” de {data}', lembrar: 'Lembrar as categorias que eu escolher para os próximos extratos',
+  importar: 'Importar {n}', voltar: 'Outro arquivo', importados: '{n} lançamentos importados', nadaSel: 'Marque pelo menos um lançamento.',
+  semCategoria: 'Sem categoria', sugerida: 'sugerida',
+};
+de.imp = {
+  botao: 'Kontoauszug importieren', titulo: 'Kontoauszug importieren', escolher: 'CSV-Datei wählen', soltar: 'oder Datei hierher ziehen',
+  bancos: 'Funktioniert mit Sparkasse, N26, ING, DKB, Commerzbank und anderen Banken mit CSV-Export.',
+  comoBaixar: 'Im Online-Banking: Umsätze → Exportieren → CSV.', exemplo: 'Beispielauszug verwenden',
+  lendo: 'Datei wird gelesen…', erroArquivo: 'Die Datei konnte nicht gelesen werden. Ist es ein CSV-Export deiner Bank?',
+  nenhuma: 'Keine Buchungen gefunden. Wähle unten die Spalten für Datum und Betrag.',
+  banco: 'Bank: {b}', bancoGenerico: 'Format erkannt', periodo: '{a} bis {b}', resumo: '{n} Buchungen', ja: '{n} schon importiert', duvida: '{n} evtl. doppelt',
+  colunas: 'Spalten', colData: 'Datum', colValor: 'Betrag', colDesc: 'Beschreibung', colFav: 'Empfänger', nenhumaColuna: '—',
+  moedaArquivo: 'Währung des Auszugs', todas: 'Alle auswählen', nenhumaSel: 'Keine auswählen', jaImportado: 'schon importiert',
+  talvez: 'ähnlich wie „{d}“ vom {data}', lembrar: 'Gewählte Kategorien für künftige Auszüge merken',
+  importar: '{n} importieren', voltar: 'Andere Datei', importados: '{n} Buchungen importiert', nadaSel: 'Wähle mindestens eine Buchung.',
+  semCategoria: 'Ohne Kategorie', sugerida: 'vorgeschlagen',
+};
+en.imp = {
+  botao: 'Import statement', titulo: 'Import statement', escolher: 'Choose CSV file', soltar: 'or drag the file here',
+  bancos: 'Works with Sparkasse, N26, ING, DKB, Commerzbank and other banks that export CSV.',
+  comoBaixar: 'In your online banking: Transactions → Export → CSV.', exemplo: 'Use sample statement',
+  lendo: 'Reading the file…', erroArquivo: 'Couldn’t read this file. Make sure it’s a CSV exported by your bank.',
+  nenhuma: 'No transactions found. Pick the date and amount columns below.',
+  banco: 'Bank: {b}', bancoGenerico: 'Format recognised', periodo: '{a} to {b}', resumo: '{n} transactions', ja: '{n} already imported', duvida: '{n} possible duplicates',
+  colunas: 'Columns', colData: 'Date', colValor: 'Amount', colDesc: 'Description', colFav: 'Payee', nenhumaColuna: '—',
+  moedaArquivo: 'Statement currency', todas: 'Select all', nenhumaSel: 'Select none', jaImportado: 'already imported',
+  talvez: 'looks like “{d}” on {data}', lembrar: 'Remember the categories I choose for future statements',
+  importar: 'Import {n}', voltar: 'Another file', importados: '{n} transactions imported', nadaSel: 'Select at least one transaction.',
+  semCategoria: 'No category', sugerida: 'suggested',
+};
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

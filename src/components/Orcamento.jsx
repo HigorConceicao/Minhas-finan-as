@@ -140,7 +140,7 @@ function FormCategoria({ aberto, cat, base, aoFechar, aoSalvar, aoApagar }) {
           <Campo rotulo={t('orc.nome')}><input id="cat-nome" className="campo" value={f.nome || ''} onChange={set('nome')} /></Campo>
         </div>
         {novo && <Segmentado opcoes={[['despesa', t('comum.despesa')], ['receita', t('comum.receita')]]} valor={f.tipo} aoMudar={(k) => setF((x) => ({ ...x, tipo: k }))} />}
-        <Campo rotulo={t('orc.cor')}>
+        <Campo grupo rotulo={t('orc.cor')}>
           <div className="flex flex-wrap gap-2">
             {CORES.map((c) => (
               <button type="button" key={c} onClick={() => setF((x) => ({ ...x, cor: c }))} aria-label={c} aria-pressed={f.cor === c}

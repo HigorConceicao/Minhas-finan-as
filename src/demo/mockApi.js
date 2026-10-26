@@ -1,6 +1,6 @@
 // API simulada para a demonstração: roda no navegador, em memória, com os mesmos cálculos do servidor.
 import {
-  metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, SAIDAS,
+  metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
 } from '../../server/finance.js';
 
 const TAXAS = { EUR: 1, BRL: 6.2, USD: 1.08 };
@@ -18,7 +18,7 @@ const paraData = (v) => {
 
 class Erro extends Error { constructor(status, msg, codigo = null, dados) { super(msg); this.status = status; this.codigo = codigo; this.dados = dados; } }
 
-const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [] };
+const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [], metas: [], contribuicoes: [], regras: [] };
 
 // ---------- dados de exemplo ----------
 function semear() {
@@ -68,7 +68,26 @@ function semear() {
     for (const [tipo, valor, descricao] of saidas[n] || []) add('movimentos', { conta: conta._id, tipo, valor, data: dia(n, 10), descricao, automatico: false });
   }
   if (hojeDia >= 10) for (const [tipo, valor, descricao] of saidas[0]) add('movimentos', { conta: conta._id, tipo, valor, data: dia(0, 10), descricao, automatico: false });
+
+  // metas: uma conjunta com prazo, uma individual sem prazo
+  const casa = add('metas', { nome: 'Casa própria', icone: '🏠', cor: '#2952eb', valorAlvo: 40000, moeda: 'EUR', prazo: dia(30, 28), pessoas: ['Eu', 'Ana'], arquivada: false });
+  add('contribuicoes', { meta: casa._id, valor: 6000, data: dia(-8, 1), pessoa: 'Eu', nota: 'Saldo inicial' });
+  add('contribuicoes', { meta: casa._id, valor: 4000, data: dia(-8, 1), pessoa: 'Ana', nota: 'Saldo inicial' });
+  for (let n = -7; n <= 0; n++) {
+    if (n === 0 && hojeDia < 5) continue;
+    add('contribuicoes', { meta: casa._id, valor: 600, data: dia(n, 5), pessoa: 'Eu', nota: '' });
+    add('contribuicoes', { meta: casa._id, valor: n === -3 ? 0 : 450, data: dia(n, 6), pessoa: 'Ana', nota: '' });
+  }
+  db.contribuicoes = db.contribuicoes.filter((c) => c.valor !== 0);
+  const reserva = add('metas', { nome: 'Reserva de emergência', icone: '🛟', cor: '#0d8c54', valorAlvo: 6000, moeda: 'EUR', prazo: null, pessoas: [], arquivada: false });
+  for (let n = -5; n <= -1; n++) add('contribuicoes', { meta: reserva._id, valor: 300, data: dia(n, 28), pessoa: '', nota: '' });
+  add('contribuicoes', { meta: reserva._id, valor: -250, data: dia(-2, 14), pessoa: '', nota: 'Conserto da bicicleta' });
+  const viagem = add('metas', { nome: 'Viagem de fim de ano', icone: '✈️', cor: '#e0672b', valorAlvo: 2500, moeda: 'EUR', prazo: dia(2, 15), pessoas: [], arquivada: false });
+  add('contribuicoes', { meta: viagem._id, valor: 900, data: dia(-2, 3), pessoa: '', nota: '' });
+  add('contribuicoes', { meta: viagem._id, valor: 300, data: dia(-1, 3), pessoa: '', nota: '' });
 }
+
+const metaComMetricas = (m) => ({ ...m, ...metricasMeta(m, db.contribuicoes.filter((c) => c.meta === m._id)) });
 
 // ---------- regras ----------
 function sincronizar(conta) {
@@ -158,6 +177,8 @@ function resumo(q) {
     totalOrcado: round2(orcamentos.reduce((s, o) => s + (o.limite || 0), 0)),
     gastoOrcado: round2(orcamentos.filter((o) => o.limite).reduce((s, o) => s + o.gasto, 0)),
     fracaoDoMes: round2(fracao), contas, patrimonioContas: round2(contas.reduce((s, c) => s + c.saldoBase, 0)),
+    metas: db.metas.filter((m) => !m.arquivada).map(metaComMetricas)
+      .map((x) => ({ _id: x._id, nome: x.nome, icone: x.icone, cor: x.cor, moeda: x.moeda, valorAlvo: x.valorAlvo, guardado: x.guardado, pct: x.pct, estado: x.estado, prazo: x.prazo })),
   };
 }
 
@@ -271,6 +292,62 @@ function rotear(method, path, q, body) {
       db.movimentos.push(mov); return mov;
     }
     if (sub === 'aplicar-rendimento') return aplicarRendimento(id, body);
+  }
+
+  if (a === 'metas') {
+    if (!id && M === 'GET') return [...db.metas].sort((x, y) => x.arquivada - y.arquivada).map(metaComMetricas);
+    if (!id && M === 'POST') {
+      const d = { _id: novoId(), icone: '🎯', cor: '#2952eb', moeda: 'EUR', prazo: null, pessoas: [], arquivada: false, ...limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas']), createdAt: agoraISO() };
+      d.prazo = paraData(d.prazo); d.valorAlvo = round2(d.valorAlvo);
+      db.metas.push(d);
+      if (Number(body.jaGuardado) > 0) db.contribuicoes.push({ _id: novoId(), meta: d._id, valor: round2(body.jaGuardado), data: agoraISO(), pessoa: '', nota: '' });
+      return metaComMetricas(d);
+    }
+    if (id && !sub && M === 'PUT') {
+      const m = achar('metas', id); const d = limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas', 'arquivada']);
+      if ('prazo' in d) d.prazo = paraData(d.prazo);
+      return metaComMetricas(Object.assign(m, d));
+    }
+    if (id && !sub && M === 'DELETE') { db.contribuicoes = db.contribuicoes.filter((c) => c.meta !== id); db.metas = db.metas.filter((m) => m._id !== id); return null; }
+    if (sub === 'contribuicoes' && M === 'GET') return db.contribuicoes.filter((c) => c.meta === id).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
+    if (sub === 'contribuicoes' && M === 'POST') {
+      const m = achar('metas', id);
+      const valor = round2(body.valor);
+      const guardado = db.contribuicoes.filter((c) => c.meta === id).reduce((s, c) => s + c.valor, 0);
+      if (valor < 0 && -valor > guardado + 0.001) throw new Erro(400, 'Retirada maior que o guardado', 'retirada_maior_guardado', { saldo: round2(guardado), moeda: m.moeda });
+      db.contribuicoes.push({ _id: novoId(), meta: id, valor, data: paraData(body.data) || agoraISO(), pessoa: body.pessoa || '', nota: body.nota || '' });
+      return metaComMetricas(m);
+    }
+  }
+  if (a === 'contribuicoes' && M === 'DELETE') { db.contribuicoes = db.contribuicoes.filter((c) => c._id !== id); return null; }
+
+  if (a === 'regras' && M === 'GET') return db.regras;
+  if (a === 'importar' && id === 'previa') {
+    const ja = new Set(db.lancamentos.filter((l) => l.importId).map((l) => l.importId));
+    const possiveis = {};
+    const tres = 3 * 86400000;
+    for (const l of body.linhas) {
+      if (ja.has(l.importId)) continue;
+      const tm = new Date(`${l.data}T12:00:00Z`).getTime();
+      const par = db.lancamentos.find((e) => !e.importId && e.tipo === l.tipo && Math.abs(e.valor - l.valor) < 0.005 && Math.abs(new Date(e.data).getTime() - tm) <= tres);
+      if (par) possiveis[l.importId] = { descricao: par.descricao, data: par.data };
+    }
+    return { jaImportados: body.linhas.map((l) => l.importId).filter((x) => ja.has(x)), possiveis };
+  }
+  if (a === 'importar' && M === 'POST') {
+    const ja = new Set(db.lancamentos.filter((l) => l.importId).map((l) => l.importId));
+    let criados = 0;
+    for (const l of body.linhas) {
+      if (ja.has(l.importId)) continue;
+      db.lancamentos.push({ _id: novoId(), tipo: l.tipo, descricao: l.descricao, valor: round2(l.valor), moeda: l.moeda || 'EUR', data: `${l.data}T12:00:00.000Z`,
+        categoria: l.categoria || null, nota: l.nota || '', recorrente: null, competencia: null, importId: l.importId, createdAt: agoraISO() });
+      ja.add(l.importId); criados++;
+    }
+    for (const r of body.regras || []) {
+      const ex = db.regras.find((x) => x.texto === r.texto);
+      if (ex) ex.categoria = r.categoria; else db.regras.push({ _id: novoId(), texto: r.texto, categoria: r.categoria });
+    }
+    return { criados, ignorados: body.linhas.length - criados, regras: (body.regras || []).length };
   }
 
   if (a === 'movimentos') {

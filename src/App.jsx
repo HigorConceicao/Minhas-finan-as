@@ -9,6 +9,7 @@ import Lancamentos from './components/Lancamentos.jsx';
 import Orcamento from './components/Orcamento.jsx';
 import Recorrentes from './components/Recorrentes.jsx';
 import Rendimento from './components/Rendimento.jsx';
+import Metas from './components/Metas.jsx';
 
 const DEMO = import.meta.env.MODE === 'demo';
 const ABAS = [
@@ -17,6 +18,7 @@ const ABAS = [
   { id: 'orcamento', icone: 'orcamento' },
   { id: 'recorrentes', icone: 'recorrente' },
   { id: 'rendimento', icone: 'rendimento' },
+  { id: 'metas', icone: 'meta' },
 ];
 
 const lerPref = (k, padrao) => { try { return localStorage.getItem(k) || padrao; } catch { return padrao; } };
@@ -189,16 +191,17 @@ function Painel({ protegido, aoSair }) {
         {aba === 'orcamento' && <Orcamento mes={mes} setMes={setMes} base={base} resumo={resumo} categorias={categorias} recarregar={recarregarTudo} />}
         {aba === 'recorrentes' && <Recorrentes categorias={categorias} />}
         {aba === 'rendimento' && <Rendimento />}
+        {aba === 'metas' && <Metas />}
       </main>
 
       {/* barra inferior no celular */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-linha bg-cartao/90 backdrop-blur-xl sm:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', paddingLeft: 'env(safe-area-inset-left, 0px)', paddingRight: 'env(safe-area-inset-right, 0px)' }}>
-        <div className="grid grid-cols-5">
+        <div className="grid grid-cols-6">
           {ABAS.map((a) => (
             <button key={a.id} onClick={() => setAba(a.id)} aria-current={aba === a.id ? 'page' : undefined}
-              className={`flex flex-col items-center gap-1 py-2.5 text-[11px] font-semibold ${aba === a.id ? 'text-marca' : 'text-texto-3'}`}>
-              <span className={`grid h-8 w-12 place-items-center rounded-full transition ${aba === a.id ? 'bg-marca-suave' : ''}`}><Icone nome={a.icone} className="h-5 w-5" forte={aba === a.id} /></span>
+              className={`flex min-w-0 flex-col items-center gap-1 py-2.5 text-[10.5px] font-semibold ${aba === a.id ? 'text-marca' : 'text-texto-3'}`}>
+              <span className={`grid h-8 w-11 place-items-center rounded-full transition ${aba === a.id ? 'bg-marca-suave' : ''}`}><Icone nome={a.icone} className="h-5 w-5" forte={aba === a.id} /></span>
               {t(`abasCurto.${a.id}`)}
             </button>
           ))}

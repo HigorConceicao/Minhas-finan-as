@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { del, get, post, put } from '../api.js';
 import {
-  dataCompleta, dataCurta, dinheiro, duracao, hojeISO, lerNumero, mesAtual, mesCurto, mesLongo, paraCampo, paraInput, pct, somarMes, ultimoDia,
+  dataCompleta, dataCurta, dinheiro, duracao, hojeISO, lerNumero, mesAtual, mesCurto, mesLongo, mesNaFrase, paraCampo, paraInput, pct, somarMes, ultimoDia,
 } from '../fmt.js';
 import { useT } from '../i18n.js';
 import { BotaoConfirmar, Campo, Carregando, Estatistica, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
@@ -103,7 +103,7 @@ export default function Rendimento() {
                 </p>
               ) : (
                 <button onClick={() => setModalRend(true)} className="flex w-full items-center justify-between gap-3 bg-black/15 px-6 py-3 text-left text-sm hover:bg-black/25">
-                  <span>{t('rend.naoLancado', { mes: mesLongo(m.mesAtual), v: dinheiro(m.jurosEstimadoProximoMes, moeda) })}</span>
+                  <span>{t('rend.naoLancado', { mes: mesNaFrase(m.mesAtual), v: dinheiro(m.jurosEstimadoProximoMes, moeda) })}</span>
                   <span className="shrink-0 font-bold">{t('rend.lancarSeta')}</span>
                 </button>
               )
@@ -310,7 +310,7 @@ function FormConta({ aberto, conta, aoFechar, aoSalvar, aoApagar }) {
         <Campo rotulo={t('rend.saldoInicial')}><input id="conta-saldo" className="campo num" inputMode="decimal" value={f.saldoInicial ?? ''} onChange={set('saldoInicial')} placeholder="350.000" /></Campo>
         <Campo rotulo={t('comum.moeda')}><select id="conta-moeda" className="campo" value={f.moeda} onChange={set('moeda')}><option>BRL</option><option>EUR</option><option>USD</option></select></Campo>
         <Campo rotulo={t('rend.dataSaldo')} className="col-span-2" dica={t('rend.dataDica')}><input id="conta-data" type="date" className="campo" value={f.dataInicio || ''} onChange={set('dataInicio')} /></Campo>
-        <Campo rotulo={t('rend.comoRende')} className="col-span-2">
+        <Campo grupo rotulo={t('rend.comoRende')} className="col-span-2">
           <Segmentado valor={f.modo} aoMudar={(k) => setF((x) => ({ ...x, modo: k }))} opcoes={[['mensal', t('rend.pctMes')], ['anual', t('rend.pctAno')], ['manual', t('rend.extrato')]]} />
         </Campo>
         {f.modo !== 'manual' ? (
@@ -448,7 +448,7 @@ function ModalRendimento({ aberto, conta, metricas, movs, aoFechar, aoSalvar }) 
             <p className="mt-1 text-xs text-texto-2">{t('rend.exatoNota')}</p>
           </div>
         )}
-        {duplicado && <p className="rounded-2xl bg-aviso-suave p-4 text-sm">{t('rend.duplicado', { mes: mesLongo(mes) })}</p>}
+        {duplicado && <p className="rounded-2xl bg-aviso-suave p-4 text-sm">{t('rend.duplicado', { mes: mesNaFrase(mes) })}</p>}
       </div>
     </Modal>
   );

@@ -4,6 +4,7 @@ import { data, dinheiro, hojeISO, lerNumero, paraCampo, paraInput } from '../fmt
 import { useT } from '../i18n.js';
 import { BotaoConfirmar, Campo, Carregando, IconeCategoria, Modal, Segmentado, SeletorMes, Vazio, useAviso } from './ui.jsx';
 import Icone from './Icones.jsx';
+import Importar from './Importar.jsx';
 
 export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoConsumirNovo }) {
   const t = useT();
@@ -12,6 +13,7 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
   const [form, setForm] = useState(null);
   const [filtroCat, setFiltroCat] = useState('');
   const [busca, setBusca] = useState('');
+  const [importando, setImportando] = useState(false);
 
   const carregar = useCallback(async () => setLista(await get(`/lancamentos?mes=${mes}`)), [mes]);
   useEffect(() => { setLista(null); carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar]);
@@ -45,7 +47,10 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SeletorMes mes={mes} aoMudar={setMes} />
-        <button className="btn-primario" onClick={() => setForm({})}><Icone nome="mais" className="h-4 w-4" forte />{t('lanc.novo').replace('+ ', '')}</button>
+        <div className="flex gap-2">
+          <button className="btn-secundario" onClick={() => setImportando(true)}><Icone nome="download" className="h-4 w-4" forte />{t('imp.botao')}</button>
+          <button className="btn-primario" onClick={() => setForm({})}><Icone nome="mais" className="h-4 w-4" forte />{t('lanc.novo').replace('+ ', '')}</button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -105,6 +110,8 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
         </div>
       )}
 
+      <Importar aberto={importando} aoFechar={() => setImportando(false)} categorias={categorias}
+        aoImportar={async (m) => { if (m && m !== mes) setMes(m); else await carregar(); }} />
       <FormLancamento aberto={form !== null} item={form} categorias={categorias} aoFechar={() => setForm(null)}
         aoSalvar={async () => { setForm(null); await carregar(); avisar(t('lanc.salvo')); }}
         aoApagar={async (id) => { await del(`/lancamentos/${id}`); setForm(null); await carregar(); avisar(t('lanc.apagado')); }} />

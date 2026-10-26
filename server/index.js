@@ -46,7 +46,7 @@ async function conectar() {
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '5mb' }));
 app.use('/api', api);
 
 // erros da API
