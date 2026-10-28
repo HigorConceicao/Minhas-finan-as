@@ -2,6 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { mesLongo, somarMes } from '../fmt.js';
 import { useT } from '../i18n.js';
 import Icone from './Icones.jsx';
+import { useDados } from '../dados.jsx';
+import { periodoDoMes } from '../../server/finance.js';
+import { dataCurta } from '../fmt.js';
 
 const PILHA = [];
 if (typeof window !== 'undefined') window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && PILHA.length) PILHA.at(-1).fechar(); });
@@ -101,12 +104,18 @@ export const Estatistica = ({ rotulo, valor, detalhe, tom }) => (
 
 export function SeletorMes({ mes, aoMudar }) {
   const t = useT();
+  const { diaInicioMes } = useDados();
+  // mês financeiro: mostra de que dia a que dia vai
+  const p = diaInicioMes > 1 ? periodoDoMes(mes, diaInicioMes) : null;
   return (
     <div className="flex items-center gap-1 rounded-full bg-cartao p-1 shadow-cartao">
       <button className="grid h-9 w-9 place-items-center rounded-full text-texto-2 hover:bg-sutil" onClick={() => aoMudar(somarMes(mes, -1))} aria-label={t('comum.mesAnterior')}>
         <Icone nome="esquerda" className="h-4 w-4" forte />
       </button>
-      <span className="min-w-[9.5rem] text-center text-sm font-bold">{mesLongo(mes)}</span>
+      <span className="min-w-[9.5rem] text-center leading-tight">
+        <span className="block text-sm font-bold">{mesLongo(mes)}</span>
+        {p && <span className="block text-[10.5px] font-semibold text-texto-3">{dataCurta(p.inicio)} – {dataCurta(new Date(p.fim.getTime() - 86400000))}</span>}
+      </span>
       <button className="grid h-9 w-9 place-items-center rounded-full text-texto-2 hover:bg-sutil" onClick={() => aoMudar(somarMes(mes, 1))} aria-label={t('comum.proximoMes')}>
         <Icone nome="direita" className="h-4 w-4" forte />
       </button>

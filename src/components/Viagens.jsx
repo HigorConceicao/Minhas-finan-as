@@ -292,7 +292,7 @@ function ModalReserva({ aberto, modo, viagem, aoFechar, aoSalvar }) {
     try { ultima = localStorage.getItem('mf2-origem-viagem') || 'saldo'; } catch {}
     const valida = ultima === 'saldo' || (ultima.startsWith('meta:') && metasAtivas.some((m) => `meta:${m._id}` === ultima)) || (ultima.startsWith('conta:') && contas.some((c) => `conta:${c._id}` === ultima));
     setF({ valor: modo === 'devolver' ? paraCampo(viagem.saldoReserva) : '', valorConta: '', data: hojeISO(), origem: valida ? ultima : 'saldo', nota: '' });
-    get(`/resumo?mes=${hojeISO().slice(0, 7)}&base=${viagem.moeda}`).then((r) => setSaldoMes(r.saldo)).catch(() => {});
+    get(`/resumo?base=${viagem.moeda}`).then((r) => setSaldoMes(r.saldo)).catch(() => {});
   }, [aberto]); // eslint-disable-line react-hooks/exhaustive-deps
   const devolver = tipo === 'devolver';
   const [qual, id] = String(f.origem || 'saldo').split(':');

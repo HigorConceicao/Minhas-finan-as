@@ -154,7 +154,8 @@ function MiniSerie({ serie, base, rotulo }) {
 function DetalheConta({ conta, categorias, aoFechar, aoEditar, aoMudar }) {
   const t = useT();
   const avisar = useAviso();
-  const [mes, setMes] = useState(mesAtual());
+  const { mesAtualFin } = useDados();
+  const [mes, setMes] = useState(mesAtualFin);
   const [lista, setLista] = useState(null);
   const [faturas, setFaturas] = useState(null);
   const [form, setForm] = useState(null);
@@ -171,7 +172,7 @@ function DetalheConta({ conta, categorias, aoFechar, aoEditar, aoMudar }) {
     else setLista(await get(`/lancamentos?mes=${mes}&conta=${id}`));
   }, [id, cartao, mes]);
   useEffect(() => { setLista(null); setFaturas(null); carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar]);
-  useEffect(() => { if (!id) { setMes(mesAtual()); setFaturaAberta(null); } }, [id]);
+  useEffect(() => { if (!id) { setMes(mesAtualFin()); setFaturaAberta(null); } }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!conta) return null;
   const depois = async (msg) => { await Promise.all([carregar(), aoMudar()]); if (msg) avisar(msg); };
 

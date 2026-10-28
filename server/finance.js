@@ -11,6 +11,35 @@ export const mesDe = (d) => {
   return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
+/**
+ * Mês financeiro: o mês começa no dia `dia` (ex.: 28, quando cai o salário) e vai até a véspera
+ * desse dia no mês seguinte. Com dia > 15, o período leva o nome do mês em que é gasto:
+ * dia 28 → "novembro" = 28/out a 27/nov. Com dia ≤ 15: dia 5 → "novembro" = 5/nov a 4/dez.
+ */
+export const diaValido = (dia) => Math.min(28, Math.max(1, Math.floor(Number(dia)) || 1));
+export const periodoDoMes = (mes, dia = 1) => {
+  const d = diaValido(dia);
+  const [y0, m0] = mes.split('-').map(Number);
+  const [y, m] = d > 15 ? (m0 === 1 ? [y0 - 1, 12] : [y0, m0 - 1]) : [y0, m0];
+  return { inicio: new Date(Date.UTC(y, m - 1, d)), fim: new Date(Date.UTC(y, m, d)) };
+};
+/** A que mês financeiro pertence uma data */
+export const mesFinanceiro = (data, dia = 1) => {
+  const d = diaValido(dia);
+  const x = new Date(data);
+  const m = mesDe(x);
+  if (d === 1) return m;
+  const [y, mo] = m.split('-').map(Number);
+  if (d > 15) return x.getUTCDate() >= d ? (mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`) : m;
+  return x.getUTCDate() < d ? (mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`) : m;
+};
+/** Fração do período já passada (0 a 1) */
+export const fracaoDoPeriodo = (mes, dia = 1, hoje = new Date()) => {
+  const { inicio, fim } = periodoDoMes(mes, dia);
+  const t = new Date(hoje).getTime();
+  return t <= inicio.getTime() ? 0 : t >= fim.getTime() ? 1 : (t - inicio.getTime()) / (fim.getTime() - inicio.getTime());
+};
+
 /** Próximo 'YYYY-MM' */
 export const proximoMes = (m) => {
   const [y, mo] = m.split('-').map(Number);

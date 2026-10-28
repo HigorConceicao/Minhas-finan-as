@@ -44,6 +44,8 @@ export default function Metas() {
 
       {poupanca && <CartaoPoupanca meta={poupanca} aoAbrir={() => setDetalhe(poupanca)} aoGuardar={(tipo) => setDeposito({ meta: poupanca, tipo })} aoConfigurar={() => setForm(poupanca)} />}
 
+      {lista.some((m) => m.regraSalario?.ativo && !m.arquivada) && <CartaoDistribuicao aoMudar={carregar} aoEditar={(m) => setForm(lista.find((x) => x._id === m._id) || m)} />}
+
       {poupanca && <h3 className="px-1 pt-2 text-base">{t('metas.suasMetas')}</h3>}
       {!ativas.length && !arquivadas.length ? (
         <Vazio icone="meta" titulo={t('metas.nenhuma')} texto={t('metas.vazio')} acao={<button className="btn-primario" onClick={() => setForm({})}>{t('metas.criar')}</button>} />
@@ -83,6 +85,73 @@ export default function Metas() {
       <FormDeposito aberto={deposito !== null} meta={deposito?.meta} tipoInicial={deposito?.tipo} aoFechar={() => setDeposito(null)}
         aoSalvar={async () => { setDeposito(null); await carregar(); avisar(t('metas.registrado')); }} />
     </div>
+  );
+}
+
+/** Distribuição do salário: as regras em ordem de prioridade, com o último salário como exemplo */
+function CartaoDistribuicao({ aoMudar, aoEditar }) {
+  const t = useT();
+  const [d, setD] = useState(null);
+  const [simulado, setSimulado] = useState('');
+  const carregar = useCallback(async (sal) => setD(await get(`/distribuicao${sal ? `?salario=${sal}` : ''}`)), []);
+  useEffect(() => { carregar().catch(() => {}); }, [carregar]);
+  if (!d || !d.regras.length) return null;
+  const moeda = d.salario?.moeda || d.regras[0].moeda;
+  const mover = async (i, dir) => {
+    const ids = d.regras.map((r) => r._id);
+    const j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    await put('/distribuicao/ordem', { ids });
+    await Promise.all([carregar(lerNumero(simulado) || undefined), aoMudar()]);
+  };
+  return (
+    <section className="cartao p-5">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-base">{t('metas.dist.titulo')}</h3>
+        <span className="num text-sm font-bold">{dinheiro(d.exemplo, moeda)}</span>
+      </div>
+      <p className="mb-3 text-xs text-texto-3">
+        {simulado ? t('metas.dist.simulando') : d.salario ? t('metas.dist.ultimo', { d: dataCompleta(d.salario.data) }) : t('metas.dist.semSalario')}
+      </p>
+      <ol className="divide-y divide-linha rounded-2xl border border-linha">
+        {d.regras.map((r, i) => (
+          <li key={r._id} className="flex items-center gap-2 px-3 py-2.5">
+            <span className="w-5 text-center text-xs font-bold text-texto-3">{i + 1}</span>
+            <span className="text-lg">{r.icone}</span>
+            <button className="min-w-0 flex-1 text-left" onClick={() => aoEditar(r)}>
+              <span className="block truncate text-sm font-semibold">{r.nome}</span>
+              <span className="block truncate text-xs text-texto-3">{textoRegra({ regraSalario: r.regra, moeda }, t).replace(/^[^:]+:\s*/, '')}</span>
+            </button>
+            <span className="text-right">
+              <span className="num block text-sm font-bold">{dinheiro(r.valor, moeda)}</span>
+              {r.cortado && <span className="num block text-[11px] font-semibold text-aviso">{t('metas.dist.cortado', { v: dinheiro(r.quer, moeda) })}</span>}
+            </span>
+            <span className="flex flex-col">
+              <button className="grid h-6 w-7 place-items-center rounded text-texto-3 hover:bg-sutil disabled:opacity-30" disabled={i === 0} onClick={() => mover(i, -1)} aria-label={t('metas.dist.subir')}><Icone nome="esquerda" className="h-3.5 w-3.5 rotate-90" forte /></button>
+              <button className="grid h-6 w-7 place-items-center rounded text-texto-3 hover:bg-sutil disabled:opacity-30" disabled={i === d.regras.length - 1} onClick={() => mover(i, 1)} aria-label={t('metas.dist.descer')}><Icone nome="direita" className="h-3.5 w-3.5 rotate-90" forte /></button>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-3 space-y-1.5 text-sm">
+        <p className="flex justify-between gap-2"><span className="text-texto-2">{t('metas.dist.livre')}</span><span className="num font-bold">{dinheiro(d.livre, moeda)}</span></p>
+        {d.mensais.length > 0 && (
+          <>
+            <p className="flex justify-between gap-2 text-texto-2"><span>{t('metas.dist.fixos', { n: d.mensais.map((m) => `${m.icone} ${m.nome}`).join(', ') })}</span><span className="num">−{dinheiro(d.totalMensais, moeda)}</span></p>
+            <p className={`flex justify-between gap-2 border-t border-linha pt-1.5 font-bold ${d.sobra < 0 ? 'text-neg' : ''}`}><span>{t('metas.dist.sobra')}</span><span className="num">{dinheiro(d.sobra, moeda)}</span></p>
+          </>
+        )}
+      </div>
+      {(d.sobra < 0 || d.regras.some((r) => r.cortado)) && <p className="mt-3 rounded-xl bg-aviso-suave p-3 text-xs font-semibold text-aviso">{t('metas.dist.aviso')}</p>}
+      <div className="mt-3 flex items-center gap-2">
+        <input className="campo num flex-1 py-2 text-sm" inputMode="decimal" placeholder={t('metas.dist.simular')} value={simulado}
+          onChange={(e) => setSimulado(e.target.value)} onBlur={() => carregar(lerNumero(simulado) || undefined)}
+          onKeyDown={(e) => { if (e.key === 'Enter') carregar(lerNumero(simulado) || undefined); }} aria-label={t('metas.dist.simular')} />
+        {simulado && <button className="btn-secundario px-3 py-2 text-xs" onClick={() => { setSimulado(''); carregar(); }}>{t('metas.dist.limpar')}</button>}
+      </div>
+      <p className="mt-2 text-xs text-texto-3">{t('metas.dist.dica')}</p>
+    </section>
   );
 }
 
@@ -507,7 +576,7 @@ function FormDeposito({ aberto, meta, tipoInicial = 'deposito', aoFechar, aoSalv
     try { ultima = localStorage.getItem(`mf2-pessoa-${meta._id}`) || ''; origem = localStorage.getItem('mf2-origem-meta') || 'saldo'; } catch {}
     if (origem.startsWith('conta:') && !contas.some((c) => `conta:${c._id}` === origem)) origem = 'saldo';
     setF({ tipo: tipoInicial, valor: '', data: hojeISO(), pessoa: meta.pessoas?.includes(ultima) ? ultima : meta.pessoas?.[0] || '', nota: '', origem, valorConta: '' });
-    get(`/resumo?mes=${hojeISO().slice(0, 7)}&base=${meta.moeda}`).then((r) => setSaldoMes(r.saldo)).catch(() => {});
+    get(`/resumo?base=${meta.moeda}`).then((r) => setSaldoMes(r.saldo)).catch(() => {});
   }, [aberto, meta, tipoInicial]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!meta) return null;
   const retirada = f.tipo === 'retirada';

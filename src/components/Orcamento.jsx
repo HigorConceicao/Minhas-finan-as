@@ -41,6 +41,7 @@ export default function Orcamento({ mes, setMes, base, resumo, categorias, recar
         {resumo.fracaoDoMes > 0 && resumo.fracaoDoMes < 1 && (
           <p className="mt-3 text-xs text-texto-3">{t('orc.mesPassou', { p: pct(resumo.fracaoDoMes * 100, 0) })}</p>
         )}
+        {resumo.viagensMes > 0 && <p className="mt-2 text-xs text-texto-3">✈️ {t('orc.viagensFora', { v: dinheiro(resumo.viagensMes, base) })}</p>}
       </section>
 
       {comLimite.length > 0 && (

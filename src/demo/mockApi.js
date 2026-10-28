@@ -1,9 +1,11 @@
 // API simulada para a demonstração: roda no navegador, em memória, com os mesmos cálculos do servidor.
 import {
   metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
+  periodoDoMes, mesFinanceiro, fracaoDoPeriodo, diaValido,
 } from '../../server/finance.js';
 import {
   saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes, sincronizarRegraSalario,
+  alocacoesSalario, distribuirSalario, ordenarRegras,
 } from '../../server/contas.js';
 import { lerTransacaoAtalho, categoriaDoComerciante, contaDoCartao } from '../../server/applepay.js';
 import { chaveRegra } from '../importacao.js';
@@ -25,6 +27,8 @@ class Erro extends Error { constructor(status, msg, codigo = null, dados) { supe
 
 const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [], metas: [], contribuicoes: [], regras: [], carteira: [], viagens: [], reservasViagem: [] };
 let atalho = {};
+let prefs = { diaInicioMes: 28 }; // na demonstração, o salário cai no dia 28
+const mesFin = (d) => mesFinanceiro(d, prefs.diaInicioMes);
 
 // ---------- dados de exemplo ----------
 function semear() {
@@ -117,7 +121,7 @@ function semear() {
   // metas: uma conjunta com prazo, uma individual sem prazo
   // poupança: 300 por mês, automático no dia 2, saindo da conta corrente
   const poup = add('metas', { nome: 'Poupança', icone: '🐷', cor: '#0d8c54', valorAlvo: 10000, moeda: 'EUR', prazo: dia(14, 28), pessoas: [], arquivada: false, tipo: 'poupanca', ignoradas: [], ignoradosSalario: [],
-    regraSalario: { ativo: true, modo: 'excedente', valor: 0, limite: 2200, categoria: c('Salário'), conta: giro._id, desde: dia(-2, 1) },
+    regraSalario: { ativo: true, modo: 'excedente', valor: 0, limite: 2200, categoria: c('Salário'), conta: giro._id, desde: dia(-2, 1), ordem: 0 },
     mensal: { valor: 300, dia: 2, conta: giro._id, desde: dia(-2, 1) } });
   add('contribuicoes', { meta: poup._id, valor: 1500, data: dia(-14, 1), pessoa: '', nota: 'Saldo inicial', conta: null, valorConta: null, registro: true });
   const casa = add('metas', { nome: 'Casa própria', icone: '🏠', cor: '#2952eb', valorAlvo: 40000, moeda: 'EUR', prazo: dia(30, 28), pessoas: ['Eu', 'Ana'], arquivada: false });
@@ -132,7 +136,8 @@ function semear() {
   const reserva = add('metas', { nome: 'Reserva de emergência', icone: '🛟', cor: '#0d8c54', valorAlvo: 6000, moeda: 'EUR', prazo: null, pessoas: [], arquivada: false });
   for (let n = -2; n <= -1; n++) add('contribuicoes', { meta: reserva._id, valor: 300, data: dia(n, 28), pessoa: '', nota: '' });
   add('contribuicoes', { meta: reserva._id, valor: -250, data: dia(-2, 14), pessoa: '', nota: 'Conserto da bicicleta' });
-  const viagem = add('metas', { nome: 'Viagem de fim de ano', icone: '✈️', cor: '#e0672b', valorAlvo: 2500, moeda: 'EUR', prazo: dia(2, 15), pessoas: [], arquivada: false });
+  const viagem = add('metas', { nome: 'Viagem de fim de ano', icone: '✈️', cor: '#e0672b', valorAlvo: 2500, moeda: 'EUR', prazo: dia(2, 15), pessoas: [], arquivada: false, ignoradosSalario: [],
+    regraSalario: { ativo: true, modo: 'fixo', valor: 150, limite: 0, categoria: c('Salário'), conta: null, desde: dia(-2, 1), ordem: 1 } });
   add('contribuicoes', { meta: viagem._id, valor: 900, data: dia(-2, 3), pessoa: '', nota: '' });
   add('contribuicoes', { meta: viagem._id, valor: 300, data: dia(-1, 3), pessoa: '', nota: '' });
 }
@@ -144,7 +149,7 @@ const mensalDe = (b, antes) => {
 const regraDe = (b, antes) => {
   const ativo = !!b?.ativo;
   return { ativo, modo: ['excedente', 'pct', 'fixo'].includes(b?.modo) ? b.modo : 'excedente', valor: Math.max(0, round2(Number(b?.valor) || 0)), limite: Math.max(0, round2(Number(b?.limite) || 0)),
-    categoria: b?.categoria || null, conta: b?.conta || null, desde: ativo ? (antes?.ativo && antes?.desde ? antes.desde : agoraISO()) : null };
+    categoria: b?.categoria || null, conta: b?.conta || null, desde: ativo ? (antes?.ativo && antes?.desde ? antes.desde : agoraISO()) : null, ordem: antes?.ordem ?? null };
 };
 const metaComMetricas = (m) => ({ ...m, ...metricasMeta(m, db.contribuicoes.filter((c) => c.meta === m._id)) });
 
@@ -168,6 +173,7 @@ function gerarRecorrentes(hoje = new Date()) {
     }
   }
   // depósitos automáticos mensais nas metas/poupança
+  const alocado = alocacoesSalario(db.metas, db.lancamentos, (v, de, para) => converter(v, de, para));
   for (const meta of db.metas) {
     for (const d of depositosAutomaticosDevidos(meta, db.contribuicoes.filter((c) => c.meta === meta._id), hoje)) {
       const conta = db.carteira.find((c) => c._id === d.conta && ORIGENS.includes(c.tipo)) || null;
@@ -176,7 +182,7 @@ function gerarRecorrentes(hoje = new Date()) {
     // distribuição do salário (Einkommensverteiler)
     if (meta.regraSalario?.ativo && !meta.arquivada) {
       const existentes = db.contribuicoes.filter((c) => c.meta === meta._id && c.salario);
-      const { criar, atualizar, apagar } = sincronizarRegraSalario(meta, db.lancamentos, existentes, (v, m) => converter(v, m, meta.moeda));
+      const { criar, atualizar, apagar } = sincronizarRegraSalario(meta, db.lancamentos, existentes, (v, m) => converter(v, m, meta.moeda), alocado.get(meta._id) || new Map());
       const conta = db.carteira.find((c) => c._id === meta.regraSalario.conta && ORIGENS.includes(c.tipo)) || null;
       for (const c of criar) db.contribuicoes.push({ _id: novoId(), meta: meta._id, valor: c.valor, data: c.data, salario: c.salario, conta: conta?._id || null, valorConta: naMoedaDaConta(conta, c.valor, meta.moeda, null), nota: '', pessoa: '' });
       for (const c of atualizar) Object.assign(db.contribuicoes.find((x) => x._id === c._id), { valor: c.valor, data: c.data, valorConta: naMoedaDaConta(conta, c.valor, meta.moeda, null) });
@@ -238,24 +244,24 @@ function aplicarRendimento(id, body = {}) {
 function resumo(q) {
   gerarRecorrentes();
   sincronizarTodas();
-  const mes = MES_RE.test(q.get('mes') || '') ? q.get('mes') : mesDe(new Date());
+  const mes = MES_RE.test(q.get('mes') || '') ? q.get('mes') : mesFin(new Date());
   const base = ['EUR', 'BRL', 'USD'].includes(q.get('base')) ? q.get('base') : 'EUR';
   const conv = (v, m) => converter(v, m, base);
-  const lancs = db.lancamentos.filter((l) => doMes(l.data, mes));
-  let receitas = 0, despesas = 0;
+  const lancs = db.lancamentos.filter((l) => mesFin(l.data) === mes);
+  let receitas = 0, despesas = 0, viagensMes = 0;
   const porCat = new Map(), fixo = new Map();
   for (const l of lancs) {
     if (l.tipo === 'transferencia' || l.ajuste) continue;
     const v = conv(l.valor, l.moeda);
     if (l.tipo === 'receita') receitas += v; else despesas += v;
+    if (l.viagem) { viagensMes += l.tipo === 'despesa' ? v : -v; continue; }
     const k = l.categoria || 'sem';
     if (l.tipo === 'despesa') porCat.set(k, (porCat.get(k) || 0) + v);
     if (l.tipo === 'despesa' && l.recorrente) fixo.set(k, (fixo.get(k) || 0) + v);
   }
   const hoje = new Date();
-  const [y, m] = mes.split('-').map(Number);
-  const diasNoMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const fracao = mes < mesDe(hoje) ? 1 : mes > mesDe(hoje) ? 0 : hoje.getUTCDate() / diasNoMes;
+  const fracao = fracaoDoPeriodo(mes, prefs.diaInicioMes, hoje);
+  const periodo = periodoDoMes(mes, prefs.diaInicioMes);
   const orcamentos = db.categorias.filter((c) => c.tipo === 'despesa').map((c) => {
     const gasto = round2(porCat.get(c._id) || 0);
     const limite = round2(conv(c.orcamentoMensal || 0, c.moeda));
@@ -274,7 +280,8 @@ function resumo(q) {
   });
   return {
     mes, base, cambio: { fonte: 'reserva', taxas: TAXAS },
-    ...(() => { const metasMes = round2(guardadoNoMes(db.contribuicoes, db.metas, conv, mes) + separadoViagensNoMes(db.reservasViagem, db.viagens, db.lancamentos, conv, mes)); return { metasMes, saldo: round2(receitas - despesas - metasMes) }; })(),
+    ...(() => { const metasMes = round2(guardadoNoMes(db.contribuicoes, db.metas, conv, mes, mesFin) + separadoViagensNoMes(db.reservasViagem, db.viagens, db.lancamentos, conv, mes, mesFin)); return { metasMes, saldo: round2(receitas - despesas - metasMes) }; })(),
+    periodo: { inicio: periodo.inicio.toISOString(), fim: periodo.fim.toISOString(), dia: prefs.diaInicioMes }, viagensMes: round2(viagensMes),
     receitas: round2(receitas), despesas: round2(despesas), quantidade: lancs.length, paraRevisar: db.lancamentos.filter((l) => l.revisar).length,
     orcamentos, semCategoria: round2(porCat.get('sem') || 0),
     totalOrcado: round2(orcamentos.reduce((s, o) => s + (o.limite || 0), 0)),
@@ -488,6 +495,20 @@ function rotear(method, path, q, body) {
 
   if (a === 'status') return { ok: true, protegido: false };
   if (a === 'atalho') return rotaAtalho(M, id, body);
+  if (a === 'preferencias') { if (M === 'PUT' && body.diaInicioMes !== undefined) prefs.diaInicioMes = diaValido(body.diaInicioMes); return { diaInicioMes: prefs.diaInicioMes }; }
+  if (a === 'distribuicao' && M === 'PUT') { (body.ids || []).forEach((mid, i) => { const m = db.metas.find((x) => x._id === mid); if (m?.regraSalario) m.regraSalario.ordem = i; }); gerarRecorrentes(); return { ok: true }; }
+  if (a === 'distribuicao') {
+    const metas = db.metas.filter((m) => !m.arquivada);
+    const ordem = ordenarRegras(metas);
+    const cat = ordem[0]?.regraSalario?.categoria;
+    const ultimo = cat ? db.lancamentos.filter((l) => l.tipo === 'receita' && l.categoria === cat).sort((x, y) => (y.data > x.data ? 1 : -1))[0] : null;
+    const exemplo = Number(q.get('salario')) || ultimo?.valor || 0;
+    const { partes, total, livre } = distribuirSalario(exemplo, ordem.map((m) => ({ id: m._id, regra: m.regraSalario })));
+    const mensais = metas.filter((m) => m.mensal?.valor > 0).map((m) => ({ _id: m._id, nome: m.nome, icone: m.icone, valor: m.mensal.valor, dia: m.mensal.dia, moeda: m.moeda }));
+    const totalMensais = round2(mensais.reduce((s, m) => s + m.valor, 0));
+    return { salario: ultimo ? { valor: ultimo.valor, moeda: ultimo.moeda, data: ultimo.data, descricao: ultimo.descricao } : null, exemplo,
+      regras: ordem.map((m, i) => ({ _id: m._id, nome: m.nome, icone: m.icone, cor: m.cor, moeda: m.moeda, regra: m.regraSalario, ...partes[i] })), total, livre, mensais, totalMensais, sobra: round2(livre - totalMensais) };
+  }
   if (a === 'login') return { token: 'aberto', protegido: false };
   if (a === 'cambio') return { taxas: TAXAS, fonte: 'reserva' };
   if (a === 'resumo') return resumo(q);
@@ -507,7 +528,7 @@ function rotear(method, path, q, body) {
     if (M === 'GET') {
       gerarRecorrentes();
       const mes = q.get('mes'), conta = q.get('conta'), viagem = q.get('viagem'), cat = q.get('categoria'), revisar = q.get('revisar') === '1';
-      return [...db.lancamentos, ...(conta ? separados().lancamentos : [])].filter((l) => (!revisar || l.revisar) && (!mes || doMes(l.data, mes)) && (!conta || l.conta === conta || l.contaDestino === conta) && (!viagem || l.viagem === viagem) && (!cat || l.categoria === cat)).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
+      return [...db.lancamentos, ...(conta ? separados().lancamentos : [])].filter((l) => (!revisar || l.revisar) && (!mes || mesFin(l.data) === mes) && (!conta || l.conta === conta || l.contaDestino === conta) && (!viagem || l.viagem === viagem) && (!cat || l.categoria === cat)).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
     }
     if (M === 'POST') {
       const dados = definirValorConta(normalizar(a, body));

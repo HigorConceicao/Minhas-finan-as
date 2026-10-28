@@ -9,7 +9,9 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
   const t = useT();
   if (!resumo) return <Carregando />;
   const atencao = resumo.orcamentos.filter((o) => o.estado === 'estourado' || o.estado === 'alerta');
-  const topGastos = [...resumo.orcamentos].filter((o) => o.gasto > 0).sort((a, b) => b.gasto - a.gasto).slice(0, 5);
+  // gastos de viagem aparecem juntos numa linha (o orçamento deles é o de cada viagem)
+  const topGastos = [...resumo.orcamentos, ...(resumo.viagensMes > 0 ? [{ categoria: 'viagens', nome: t('visao.gastosViagens'), icone: '✈️', cor: '#e0672b', gasto: resumo.viagensMes }] : [])]
+    .filter((o) => o.gasto > 0).sort((a, b) => b.gasto - a.gasto).slice(0, 5);
   const maxGasto = topGastos[0]?.gasto || 1;
 
   return (

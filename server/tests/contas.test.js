@@ -208,3 +208,17 @@ test('"só registro" não entra no saldo do mês', async () => {
   const c = [{ meta: 'm', valor: 1000, data: '2026-03-05T12:00:00Z', registro: true }, { meta: 'm', valor: 100, data: '2026-03-06T12:00:00Z' }];
   assert.equal(guardadoNoMes(c, metas, (v) => v, '2026-03'), 100);
 });
+
+test('distribuição do salário: ordem de prioridade e nunca mais do que sobra', async () => {
+  const { distribuirSalario } = await import('../contas.js');
+  const r = distribuirSalario(3100, [
+    { id: 'viagem', regra: { ativo: true, modo: 'pct', valor: 10 } },
+    { id: 'poup', regra: { ativo: true, modo: 'excedente', limite: 2500 } },
+    { id: 'carro', regra: { ativo: true, modo: 'fixo', valor: 300 } },
+  ]);
+  assert.deepEqual(r.partes.map((p) => [p.id, p.valor]), [['viagem', 310], ['poup', 290], ['carro', 300]]);
+  assert.equal(r.livre, 2200);
+  const apertado = distribuirSalario(1000, [{ id: 'a', regra: { ativo: true, modo: 'fixo', valor: 800 } }, { id: 'b', regra: { ativo: true, modo: 'fixo', valor: 500 } }]);
+  assert.deepEqual(apertado.partes.map((p) => [p.valor, p.cortado]), [[800, false], [200, true]]);
+  assert.equal(apertado.livre, 0);
+});

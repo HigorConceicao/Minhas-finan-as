@@ -3,7 +3,7 @@
 import webpush from 'web-push';
 import { Config, InscricaoPush, LembreteEnviado, Recorrente, Conta, Lancamento, Categoria, ReservaViagem, Viagem } from './models.js';
 import { lembretes, movimentosSeparados } from './contas.js';
-import { mesDe, round2 } from './finance.js';
+import { mesDe, round2, periodoDoMes, mesFinanceiro, diaValido } from './finance.js';
 import { obterTaxas, converter } from './cambio.js';
 
 const FUSO = process.env.TZ_LEMBRETES || 'Europe/Berlin';
@@ -110,8 +110,10 @@ export async function verificarLembretes({ forcar = false } = {}) {
   if (reservasCartao.length) lancCartoes.push(...movimentosSeparados({ reservasViagem: reservasCartao, viagens: await Viagem.find().lean(), contas: cartoes }).lancamentos);
 
   // orçamento do mês por categoria, na moeda de cada categoria
-  const [y, m] = mesDe(hoje).split('-').map(Number);
-  const doMes = await Lancamento.find({ tipo: 'despesa', ajuste: { $ne: true }, data: { $gte: new Date(Date.UTC(y, m - 1, 1)), $lt: new Date(Date.UTC(y, m, 1)) } }).lean();
+  // no mês financeiro (começa no dia escolhido); gastos de viagem ficam no orçamento da viagem
+  const dia = diaValido((await Config.findOne({ chave: 'preferencias' }).lean())?.valor?.diaInicioMes || 1);
+  const { inicio, fim } = periodoDoMes(mesFinanceiro(hoje, dia), dia);
+  const doMes = await Lancamento.find({ tipo: 'despesa', ajuste: { $ne: true }, viagem: null, data: { $gte: inicio, $lt: fim } }).lean();
   const { taxas } = await obterTaxas();
   const orcamentos = categorias.filter((c) => c.orcamentoMensal > 0).map((c) => {
     const gasto = round2(doMes.filter((l) => String(l.categoria) === String(c._id)).reduce((s, l) => s + converter(l.valor, l.moeda, c.moeda, taxas), 0));

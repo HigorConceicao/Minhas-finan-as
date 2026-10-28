@@ -765,6 +765,36 @@ Object.assign(pt.erro, { chave_atalho: 'Chave do atalho inválida.', valor_inval
 Object.assign(de.erro, { chave_atalho: 'Ungültiger Kurzbefehl-Schlüssel.', valor_invalido: 'Betrag nicht erkannt.' });
 Object.assign(en.erro, { chave_atalho: 'Invalid shortcut key.', valor_invalido: 'Amount not recognised.' });
 
+
+Object.assign(pt.ajustes, { diaInicio: 'O mês começa no dia', dia1: 'Dia 1 (mês do calendário)', diaN: 'Dia {d}', diaSalvo: 'Início do mês atualizado',
+  diaDica: 'Use o dia em que o salário cai. Com dia 28, “novembro” vai de 28/out a 27/nov. O relatório anual continua por mês do calendário.' });
+Object.assign(de.ajustes, { diaInicio: 'Der Monat beginnt am', dia1: '1. (Kalendermonat)', diaN: '{d}.', diaSalvo: 'Monatsbeginn aktualisiert',
+  diaDica: 'Nimm den Tag, an dem das Gehalt kommt. Mit dem 28. läuft „November“ vom 28.10. bis 27.11. Der Jahresbericht bleibt nach Kalendermonaten.' });
+Object.assign(en.ajustes, { diaInicio: 'The month starts on day', dia1: 'Day 1 (calendar month)', diaN: 'Day {d}', diaSalvo: 'Month start updated',
+  diaDica: 'Use the day your salary arrives. With day 28, “November” runs from 28 Oct to 27 Nov. The annual report stays by calendar month.' });
+Object.assign(pt.visao, { gastosViagens: 'Viagens' }); Object.assign(de.visao, { gastosViagens: 'Reisen' }); Object.assign(en.visao, { gastosViagens: 'Trips' });
+Object.assign(pt.orc, { viagensFora: '{v} em gastos de viagem não entram nos limites: cada viagem tem o próprio orçamento.' });
+Object.assign(de.orc, { viagensFora: '{v} Reiseausgaben zählen nicht zu den Limits: Jede Reise hat ihr eigenes Budget.' });
+Object.assign(en.orc, { viagensFora: '{v} in trip expenses don’t count towards the limits: each trip has its own budget.' });
+Object.assign(pt.metas, { dist: {
+  titulo: 'Distribuição do salário', ultimo: 'Com o último salário ({d}). A ordem define a prioridade: cada regra só leva o que sobrou.', semSalario: 'Nenhum salário ainda: use a simulação abaixo.', simulando: 'Simulação',
+  cortado: 'queria {v}', livre: 'Fica livre para o mês', fixos: 'Depósitos fixos ({n})', sobra: 'Sobra depois de tudo', subir: 'Subir', descer: 'Descer',
+  aviso: 'As regras pedem mais do que o salário cobre. As de baixo recebem menos; reveja os valores ou a ordem.', simular: 'Simular com outro salário', limpar: 'Limpar',
+  dica: 'Toque numa meta para mudar a regra. Mudar a ordem também refaz a divisão dos salários já recebidos desde que as regras foram ligadas.',
+} });
+Object.assign(de.metas, { dist: {
+  titulo: 'Gehaltsverteilung', ultimo: 'Mit dem letzten Gehalt ({d}). Die Reihenfolge ist die Priorität: Jede Regel bekommt nur, was übrig ist.', semSalario: 'Noch kein Gehalt: nutze die Simulation unten.', simulando: 'Simulation',
+  cortado: 'wollte {v}', livre: 'Frei für den Monat', fixos: 'Feste Einzahlungen ({n})', sobra: 'Übrig nach allem', subir: 'Nach oben', descer: 'Nach unten',
+  aviso: 'Die Regeln wollen mehr, als das Gehalt hergibt. Die unteren bekommen weniger; prüfe Beträge oder Reihenfolge.', simular: 'Mit anderem Gehalt simulieren', limpar: 'Zurücksetzen',
+  dica: 'Tippe auf ein Sparziel, um die Regel zu ändern. Eine neue Reihenfolge verteilt auch die Gehälter seit dem Einschalten neu.',
+} });
+Object.assign(en.metas, { dist: {
+  titulo: 'Salary split', ultimo: 'With your last salary ({d}). The order sets priority: each rule only takes what’s left.', semSalario: 'No salary yet: use the simulation below.', simulando: 'Simulation',
+  cortado: 'wanted {v}', livre: 'Free for the month', fixos: 'Fixed deposits ({n})', sobra: 'Left after everything', subir: 'Move up', descer: 'Move down',
+  aviso: 'The rules ask for more than the salary covers. The lower ones get less; review the amounts or the order.', simular: 'Simulate another salary', limpar: 'Clear',
+  dica: 'Tap a goal to change its rule. Changing the order also re-splits salaries received since the rules were turned on.',
+} });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

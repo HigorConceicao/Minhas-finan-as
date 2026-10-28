@@ -15,7 +15,7 @@ import Viagens from './components/Viagens.jsx';
 import Relatorio from './components/Relatorio.jsx';
 import Mais from './components/Mais.jsx';
 import ApplePay from './components/ApplePay.jsx';
-import { ProvedorDados } from './dados.jsx';
+import { ProvedorDados, useDados } from './dados.jsx';
 
 const DEMO = import.meta.env.MODE === 'demo';
 const ABAS = [
@@ -99,6 +99,7 @@ function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
   const { idioma, setIdioma } = useIdioma();
   const [tema, setTema] = useState(() => lerPref('mf2-tema', 'sistema'));
   const mudarTema = (v) => { setTema(v); gravarPref('mf2-tema', v); aplicarTema(v); };
+  const { diaInicioMes, salvarDiaInicio } = useDados();
 
   const exportar = async () => {
     try {
@@ -119,6 +120,13 @@ function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
         <div>
           <p className="rotulo mb-2">{t('ajustes.tema')}</p>
           <Segmentado valor={tema} aoMudar={mudarTema} opcoes={[['sistema', t('ajustes.sistema')], ['claro', t('ajustes.claro')], ['escuro', t('ajustes.escuro')]]} />
+        </div>
+        <div>
+          <label htmlFor="aj-dia" className="rotulo mb-2 block">{t('ajustes.diaInicio')}</label>
+          <select id="aj-dia" className="campo" value={diaInicioMes} onChange={async (e) => { try { await salvarDiaInicio(Number(e.target.value)); avisar(t('ajustes.diaSalvo')); } catch (err) { avisar(err.message, 'erro'); } }}>
+            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d === 1 ? t('ajustes.dia1') : t('ajustes.diaN', { d })}</option>)}
+          </select>
+          <p className="mt-1.5 text-xs text-texto-3">{t('ajustes.diaDica')}</p>
         </div>
         {!DEMO && (
           <div className="space-y-2 border-t border-linha pt-5">
@@ -143,7 +151,10 @@ function Painel({ protegido, aoSair }) {
   const { idioma } = useIdioma();
   const hashValido = () => { const h = location.hash.slice(1); return ROTAS.has(h) ? h : 'visao'; };
   const [aba, setAbaEstado] = useState(hashValido);
-  const [mes, setMes] = useState(mesAtual());
+  const { diaInicioMes, mesAtualFin } = useDados();
+  const [mes, setMes] = useState(mesAtualFin);
+  // ao mudar o dia de início do mês, volta para o mês financeiro atual
+  useEffect(() => { setMes(mesAtualFin()); }, [diaInicioMes]); // eslint-disable-line react-hooks/exhaustive-deps
   const [base, setBaseEstado] = useState(() => lerPref('mf2-base', 'EUR'));
   const [categorias, setCategorias] = useState([]);
   const [resumo, setResumo] = useState(null);

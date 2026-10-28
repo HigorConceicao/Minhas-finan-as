@@ -96,3 +96,21 @@ test('rendimento automático respeita meses já lançados, apagados e o modo man
   assert.equal(rendimentosAutomaticos(base, [], new Date('2026-08-31T13:00:00Z')).length, 1);
   assert.equal(rendimentosAutomaticos(base, [], new Date('2026-08-30T23:00:00Z')).length, 0);
 });
+
+test('mês financeiro: começa no dia do salário', async () => {
+  const { periodoDoMes, mesFinanceiro, fracaoDoPeriodo } = await import('../finance.js');
+  const p = periodoDoMes('2026-11', 28);
+  assert.equal(p.inicio.toISOString().slice(0, 10), '2026-10-28');
+  assert.equal(p.fim.toISOString().slice(0, 10), '2026-11-28'); // exclusivo: vai até 27/nov
+  assert.equal(periodoDoMes('2026-01', 28).inicio.toISOString().slice(0, 10), '2025-12-28');
+  assert.equal(periodoDoMes('2026-11', 5).inicio.toISOString().slice(0, 10), '2026-11-05');
+  assert.equal(periodoDoMes('2026-11', 1).inicio.toISOString().slice(0, 10), '2026-11-01');
+  assert.equal(mesFinanceiro('2026-10-28T09:00:00Z', 28), '2026-11');
+  assert.equal(mesFinanceiro('2026-10-27T23:00:00Z', 28), '2026-10');
+  assert.equal(mesFinanceiro('2026-12-30T12:00:00Z', 28), '2027-01');
+  assert.equal(mesFinanceiro('2026-11-04T12:00:00Z', 5), '2026-10');
+  assert.equal(mesFinanceiro('2026-11-05T12:00:00Z', 5), '2026-11');
+  assert.equal(mesFinanceiro('2026-11-15T12:00:00Z', 1), '2026-11');
+  assert.equal(fracaoDoPeriodo('2026-11', 28, new Date('2026-10-28T00:00:00Z')), 0);
+  assert.ok(Math.abs(fracaoDoPeriodo('2026-11', 28, new Date('2026-11-12T12:00:00Z')) - 15.5 / 31) < 0.01);
+});

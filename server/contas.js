@@ -311,10 +311,10 @@ export function movimentosSeparados({ contribuicoes = [], metas = [], reservasVi
  * Quanto foi guardado nas metas num mês (depósitos menos retiradas), na moeda base.
  * Sai do saldo do mês: dinheiro guardado não está mais livre para gastar.
  */
-export function guardadoNoMes(contribuicoes, metas, conv, mes) {
+export function guardadoNoMes(contribuicoes, metas, conv, mes, mesDaData = mesDe) {
   const moeda = new Map(metas.map((m) => [idDe(m), m.moeda]));
   // "só registro" (dinheiro que já estava guardado) não entra no saldo do mês
-  return round2(contribuicoes.filter((c) => !c.registro && mesDe(c.data) === mes && moeda.has(idDe(c.meta)))
+  return round2(contribuicoes.filter((c) => !c.registro && mesDaData(c.data) === mes && moeda.has(idDe(c.meta)))
     .reduce((s, c) => s + conv(Number(c.valor), moeda.get(idDe(c.meta))), 0));
 }
 
@@ -342,12 +342,12 @@ export function depositosAutomaticosDevidos(meta, existentes = [], hoje = new Da
  * Dinheiro separado para viagens num mês (moeda base): o que foi separado menos o que já foi gasto
  * com ele. Separar tira do saldo do mês; gastar o separado não tira de novo.
  */
-export function separadoViagensNoMes(reservas, viagens, gastosReserva, conv, mes) {
+export function separadoViagensNoMes(reservas, viagens, gastosReserva, conv, mes, mesDaData = mesDe) {
   const moeda = new Map(viagens.map((v) => [idDe(v), v.moeda]));
   let s = 0;
-  for (const r of reservas) if (mesDe(r.data) === mes && moeda.has(idDe(r.viagem))) s += conv(Number(r.valorViagem ?? r.valor), moeda.get(idDe(r.viagem)));
+  for (const r of reservas) if (mesDaData(r.data) === mes && moeda.has(idDe(r.viagem))) s += conv(Number(r.valorViagem ?? r.valor), moeda.get(idDe(r.viagem)));
   for (const l of gastosReserva) {
-    if (!l.reservaViagem || mesDe(l.data) !== mes || !moeda.has(idDe(l.viagem))) continue;
+    if (!l.reservaViagem || mesDaData(l.data) !== mes || !moeda.has(idDe(l.viagem))) continue;
     s -= (l.tipo === 'receita' ? -1 : 1) * conv(Number(l.valorConta ?? l.valor), moeda.get(idDe(l.viagem)));
   }
   return round2(s);
@@ -376,7 +376,54 @@ export function valorDaRegraSalario(regra, salario) {
  * `salarios`: lançamentos de receita da categoria da regra; `existentes`: contribuições com `salario`.
  * `conv(valor, moeda)` converte para a moeda da meta. Devolve o que criar, atualizar e apagar.
  */
-export function sincronizarRegraSalario(meta, salarios, existentes, conv) {
+/**
+ * Divide um salário entre as regras, em ordem de prioridade. Cada regra só leva o que ainda sobra:
+ * - 'excedente' guarda o que passar de `limite` no que restou (o `limite` fica para você);
+ * - 'pct' e 'fixo' são calculados sobre o salário inteiro, mas limitados ao que restou.
+ * `regras`: [{ id, regra }] já na ordem. Devolve as partes, o total e o que fica livre.
+ */
+export function distribuirSalario(salario, regras) {
+  const s = round2(Number(salario) || 0);
+  let resta = s;
+  const partes = regras.map(({ id, regra }) => {
+    const quer = regra.modo === 'excedente' ? valorDaRegraSalario(regra, resta) : valorDaRegraSalario(regra, s);
+    const valor = round2(Math.min(quer, Math.max(0, resta)));
+    resta = round2(resta - valor);
+    return { id, quer: round2(quer), valor, cortado: valor + 0.004 < quer };
+  });
+  return { partes, total: round2(s - resta), livre: resta };
+}
+
+/** Metas com regra de salário, na ordem de prioridade (a escolhida; sem ordem, a poupança primeiro) */
+export const ordenarRegras = (metas) => metas.filter((m) => m.regraSalario?.ativo && !m.arquivada).sort((a, b) =>
+  ((a.regraSalario.ordem ?? 1e9) - (b.regraSalario.ordem ?? 1e9)) || ((b.tipo === 'poupanca') - (a.tipo === 'poupanca')) || (t(a.createdAt || 0) - t(b.createdAt || 0)));
+
+/**
+ * Para cada salário, quanto vai para cada meta (já dividido em ordem e na moeda da meta).
+ * `conv(valor, de, para)`. Valores das regras (limite, fixo) são lidos na moeda do salário.
+ * Devolve Map(metaId → Map(salarioId → valor)).
+ */
+export function alocacoesSalario(metas, salarios, conv) {
+  const ordem = ordenarRegras(metas);
+  const out = new Map(ordem.map((m) => [idDe(m), new Map()]));
+  for (const l of salarios) {
+    if (l.tipo !== 'receita') continue;
+    const id = idDe(l);
+    const aplicaveis = ordem.filter((m) => {
+      const r = m.regraSalario;
+      return idDe(l.categoria) === idDe(r.categoria) && r.desde && diaISO(l.data) >= diaISO(r.desde) && !(m.ignoradosSalario || []).map(String).includes(id);
+    });
+    if (!aplicaveis.length) continue;
+    const { partes } = distribuirSalario(Number(l.valor), aplicaveis.map((m) => ({ id: idDe(m), regra: m.regraSalario })));
+    for (const p of partes) {
+      const meta = aplicaveis.find((m) => idDe(m) === p.id);
+      out.get(p.id).set(id, round2(conv(p.valor, l.moeda, meta.moeda)));
+    }
+  }
+  return out;
+}
+
+export function sincronizarRegraSalario(meta, salarios, existentes, conv, alocado = null) {
   const regra = meta.regraSalario;
   const ignorados = new Set((meta.ignoradosSalario || []).map(String));
   const porSalario = new Map(existentes.filter((c) => c.salario).map((c) => [idDe(c.salario), c]));
@@ -388,7 +435,8 @@ export function sincronizarRegraSalario(meta, salarios, existentes, conv) {
       const id = idDe(l);
       if (l.tipo !== 'receita' || idDe(l.categoria) !== idDe(regra.categoria) || diaISO(l.data) < desde || ignorados.has(id)) continue;
       const base = round2(conv(Number(l.valor), l.moeda));
-      const v = valorDaRegraSalario(regra, base);
+      // com várias regras, a parte desta meta já vem dividida em `alocado` (salário → valor)
+      const v = alocado ? round2(alocado.get(id) || 0) : valorDaRegraSalario(regra, base);
       if (v <= 0) continue;
       validos.add(id);
       const ja = porSalario.get(id);

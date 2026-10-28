@@ -6,10 +6,12 @@ import {
 } from './models.js';
 import {
   saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes, sincronizarRegraSalario,
+  alocacoesSalario, distribuirSalario, ordenarRegras,
 } from './contas.js';
 import { chavePublica, inscrever, cancelarInscricao, enviarTeste } from './lembretes.js';
 import {
   metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
+  periodoDoMes, mesFinanceiro, fracaoDoPeriodo, diaValido,
 } from './finance.js';
 import { obterTaxas, converter, conversorPorDia, taxasNaData } from './cambio.js';
 import { lerTransacaoAtalho, categoriaDoComerciante, contaDoCartao } from './applepay.js';
@@ -24,6 +26,16 @@ const MES_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const intervaloDoMes = (mes) => {
   const [y, m] = mes.split('-').map(Number);
   return { $gte: new Date(Date.UTC(y, m - 1, 1)), $lt: new Date(Date.UTC(y, m, 1)) };
+};
+// mês financeiro: o dia em que o mês começa (ex.: o dia do salário). Guardado em Config.
+let prefsCache = null;
+export async function preferencias() {
+  if (!prefsCache) prefsCache = (await Config.findOne({ chave: 'preferencias' }).lean())?.valor || {};
+  return { diaInicioMes: diaValido(prefsCache.diaInicioMes || 1) };
+}
+const intervaloFinanceiro = async (mes) => {
+  const { inicio, fim } = periodoDoMes(mes, (await preferencias()).diaInicioMes);
+  return { $gte: inicio, $lt: fim };
 };
 // `codigo` permite ao app mostrar a mensagem no idioma escolhido
 const erro = (res, status, mensagem, codigo = null, dados = undefined) => res.status(status).json({ erro: mensagem, codigo, dados });
@@ -132,13 +144,17 @@ async function gerarDepositosAutomaticos(hoje = new Date()) {
         await ContribuicaoMeta.create({ ...d, conta: conta?._id || null, valorConta: await valorNaMoedaDaConta(conta, d.valor, meta.moeda, null, d.data), nota: '' });
       }
     }
-    // distribuição do salário
-    for (const meta of await Meta.find({ 'regraSalario.ativo': true, arquivada: false }).lean()) {
+    // distribuição do salário: todas as regras juntas, em ordem, sem passar do salário
+    const comRegra = await Meta.find({ 'regraSalario.ativo': true, arquivada: false }).lean();
+    const { taxas } = comRegra.length ? await obterTaxas() : {};
+    const desdeMin = comRegra.reduce((min, m) => Math.min(min, new Date(m.regraSalario.desde || Date.now()).getTime()), Date.now());
+    const salariosTodos = comRegra.length ? await Lancamento.find({ tipo: 'receita', categoria: { $in: comRegra.map((m) => m.regraSalario.categoria).filter(Boolean) }, data: { $gte: new Date(desdeMin - 86400000) } }).lean() : [];
+    const alocado = alocacoesSalario(comRegra, salariosTodos, (v, de, para) => converter(v, de, para, taxas));
+    for (const meta of comRegra) {
       const r = meta.regraSalario;
-      const salarios = await Lancamento.find({ tipo: 'receita', categoria: r.categoria, data: { $gte: new Date(new Date(r.desde).getTime() - 86400000) } }).lean();
+      const salarios = salariosTodos.filter((l) => String(l.categoria) === String(r.categoria));
       const existentes = await ContribuicaoMeta.find({ meta: meta._id, salario: { $ne: null } }).lean();
-      const { taxas } = await obterTaxas();
-      const { criar, atualizar, apagar } = sincronizarRegraSalario(meta, salarios, existentes, (v, m) => converter(v, m, meta.moeda, taxas));
+      const { criar, atualizar, apagar } = sincronizarRegraSalario(meta, salarios, existentes, (v, m) => converter(v, m, meta.moeda, taxas), alocado.get(String(meta._id)) || new Map());
       let conta = r.conta ? await Conta.findById(r.conta).lean() : null;
       if (conta && (conta.arquivada || !ORIGENS.includes(conta.tipo))) conta = null;
       for (const c of criar) {
@@ -270,7 +286,7 @@ api.get('/lancamentos', wrap(async (req, res) => {
   const filtro = {};
   if (req.query.mes) {
     if (!MES_RE.test(req.query.mes)) return erro(res, 400, 'Mês inválido (use AAAA-MM)');
-    filtro.data = intervaloDoMes(req.query.mes);
+    filtro.data = await intervaloFinanceiro(req.query.mes);
   }
   if (req.query.categoria && validarId(req.query.categoria)) filtro.categoria = req.query.categoria;
   if (req.query.conta && validarId(req.query.conta)) filtro.$or = [{ conta: req.query.conta }, { contaDestino: req.query.conta }];
@@ -327,6 +343,38 @@ api.put('/lancamentos/:id', wrap(async (req, res) => {
   if (l.tipo === 'receita' || antes.tipo === 'receita') await gerarDepositosAutomaticos();
   res.json(l);
 }));
+api.get('/preferencias', wrap(async (_req, res) => res.json(await preferencias())));
+api.put('/preferencias', wrap(async (req, res) => {
+  const atual = (await Config.findOne({ chave: 'preferencias' }).lean())?.valor || {};
+  if (req.body?.diaInicioMes !== undefined) atual.diaInicioMes = diaValido(req.body.diaInicioMes);
+  await Config.updateOne({ chave: 'preferencias' }, { $set: { valor: atual } }, { upsert: true });
+  prefsCache = null;
+  res.json(await preferencias());
+}));
+
+/** Visão da distribuição do salário: as regras em ordem, com o último salário como exemplo */
+api.get('/distribuicao', wrap(async (req, res) => {
+  const metas = await Meta.find({ arquivada: false }).lean();
+  const ordem = ordenarRegras(metas);
+  const categoria = ordem[0]?.regraSalario?.categoria;
+  const ultimo = categoria ? await Lancamento.findOne({ tipo: 'receita', categoria }).sort({ data: -1 }).lean() : null;
+  const exemplo = Number(req.query.salario) || ultimo?.valor || 0;
+  const { partes, total, livre } = distribuirSalario(exemplo, ordem.map((m) => ({ id: String(m._id), regra: m.regraSalario })));
+  const mensais = metas.filter((m) => m.mensal?.valor > 0).map((m) => ({ _id: m._id, nome: m.nome, icone: m.icone, valor: m.mensal.valor, dia: m.mensal.dia, moeda: m.moeda }));
+  const totalMensais = round2(mensais.reduce((s, m) => s + m.valor, 0));
+  res.json({
+    salario: ultimo ? { valor: ultimo.valor, moeda: ultimo.moeda, data: ultimo.data, descricao: ultimo.descricao } : null, exemplo,
+    regras: ordem.map((m, i) => ({ _id: m._id, nome: m.nome, icone: m.icone, cor: m.cor, moeda: m.moeda, regra: m.regraSalario, ...partes[i] })),
+    total, livre, mensais, totalMensais, sobra: round2(livre - totalMensais),
+  });
+}));
+api.put('/distribuicao/ordem', wrap(async (req, res) => {
+  const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).filter(validarId);
+  await Promise.all(ids.map((id, i) => Meta.updateOne({ _id: id }, { 'regraSalario.ordem': i })));
+  await gerarDepositosAutomaticos();
+  res.json({ ok: true });
+}));
+
 api.post('/lancamentos/:id/conferir', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   await Lancamento.updateOne({ _id: req.params.id }, { revisar: false });
@@ -424,7 +472,11 @@ api.delete('/recorrentes/:id', wrap(async (req, res) => {
 // ---------- resumo do mês (com orçamento por categoria) ----------
 api.get('/resumo', wrap(async (req, res) => {
   await gerarRecorrentes();
-  const mes = MES_RE.test(req.query.mes || '') ? req.query.mes : mesDe(new Date());
+  const { diaInicioMes: diaIni } = await preferencias();
+  const mes = MES_RE.test(req.query.mes || '') ? req.query.mes : mesFinanceiro(new Date(), diaIni);
+  const periodo = periodoDoMes(mes, diaIni);
+  const intervalo = { $gte: periodo.inicio, $lt: periodo.fim };
+  const mesDaData = (d) => mesFinanceiro(d, diaIni);
   const base = ['EUR', 'BRL', 'USD'].includes(req.query.base) ? req.query.base : 'EUR';
   const { taxas, fonte, data: dataCambio } = await obterTaxas();
   const conv = (v, m) => converter(v, m, base, taxas);
@@ -432,17 +484,19 @@ api.get('/resumo', wrap(async (req, res) => {
   await sincronizarTodas();
   const [cats, lancs, contas] = await Promise.all([
     Categoria.find().lean(),
-    Lancamento.find({ data: intervaloDoMes(mes) }).lean(),
+    Lancamento.find({ data: intervalo }).lean(),
     ContaRendimento.find().lean(),
   ]);
 
-  let receitas = 0, despesas = 0;
+  let receitas = 0, despesas = 0, viagensMes = 0;
   const porCat = new Map();
   const fixoPorCat = new Map(); // parte vinda de recorrentes (não entra na projeção por ritmo)
   for (const l of lancs) {
     if (l.tipo === 'transferencia' || l.ajuste) continue; // só movem dinheiro entre contas
     const v = conv(l.valor, l.moeda);
     if (l.tipo === 'receita') receitas += v; else despesas += v;
+    // gastos de viagem têm o orçamento da própria viagem: não entram nos limites mensais
+    if (l.viagem) { viagensMes += l.tipo === 'despesa' ? v : -v; continue; }
     const k = l.categoria ? String(l.categoria) : 'sem';
     porCat.set(k, (porCat.get(k) || 0) + (l.tipo === 'despesa' ? v : 0));
     if (l.tipo === 'despesa' && l.recorrente) fixoPorCat.set(k, (fixoPorCat.get(k) || 0) + v);
@@ -450,9 +504,7 @@ api.get('/resumo', wrap(async (req, res) => {
 
   // fração do mês já passada (para "ritmo" do orçamento)
   const hoje = new Date();
-  const [y, m] = mes.split('-').map(Number);
-  const diasNoMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const fracao = mes < mesDe(hoje) ? 1 : mes > mesDe(hoje) ? 0 : hoje.getUTCDate() / diasNoMes;
+  const fracao = fracaoDoPeriodo(mes, diaIni, hoje);
 
   const orcamentos = cats
     .filter((c) => c.tipo === 'despesa')
@@ -488,8 +540,8 @@ api.get('/resumo', wrap(async (req, res) => {
   const metasResumo = await resumoMetas();
   // depósitos em metas no mês saem do saldo do mês (retiradas voltam)
   // e o dinheiro separado para viagens (menos o que já foi gasto com ele)
-  const metasMes = round2(guardadoNoMes(await ContribuicaoMeta.find({ data: intervaloDoMes(mes) }).lean(), await Meta.find().lean(), conv, mes)
-    + separadoViagensNoMes(await ReservaViagem.find({ data: intervaloDoMes(mes) }).lean(), await Viagem.find().lean(), lancs, conv, mes));
+  const metasMes = round2(guardadoNoMes(await ContribuicaoMeta.find({ data: intervalo }).lean(), await Meta.find().lean(), conv, mes, mesDaData)
+    + separadoViagensNoMes(await ReservaViagem.find({ data: intervalo }).lean(), await Viagem.find().lean(), lancs, conv, mes, mesDaData));
   const dadosCarteira = await carregarCarteira();
   const pat = patrimonio({ ...dadosCarteira, conv });
   const proximos = lembretes({
@@ -500,6 +552,7 @@ api.get('/resumo', wrap(async (req, res) => {
   res.json({
     mes, base, cambio: { fonte, data: dataCambio, taxas }, metas: metasResumo,
     patrimonio: { ativos: pat.ativos, passivos: pat.passivos, liquido: pat.liquido }, temContas: dadosCarteira.contas.length > 0, proximos,
+    periodo: { inicio: periodo.inicio, fim: periodo.fim, dia: diaIni }, viagensMes: round2(viagensMes),
     receitas: round2(receitas), despesas: round2(despesas), metasMes, paraRevisar: await Lancamento.countDocuments({ revisar: true }), saldo: round2(receitas - despesas - metasMes),
     quantidade: lancs.length,
     orcamentos, semCategoria, totalOrcado, gastoOrcado, fracaoDoMes: round2(fracao),
@@ -682,6 +735,7 @@ api.put('/metas/:id', wrap(async (req, res) => {
   if (campos.regraSalario) {
     if (campos.regraSalario.ativo && !campos.regraSalario.categoria) return erro(res, 400, 'Escolha a categoria do salário', 'categoria_salario');
     campos.regraSalario.desde = campos.regraSalario.ativo ? (antes.regraSalario?.ativo && antes.regraSalario?.desde ? antes.regraSalario.desde : new Date()) : null;
+    campos.regraSalario.ordem = antes.regraSalario?.ordem ?? null;
   }
   const m = await Meta.findByIdAndUpdate(req.params.id, campos, { new: true, runValidators: true }).lean();
   await gerarDepositosAutomaticos();

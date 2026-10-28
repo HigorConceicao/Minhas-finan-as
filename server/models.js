@@ -145,6 +145,7 @@ export const Meta = model(
         categoria: { type: Schema.Types.ObjectId, ref: 'Categoria', default: null },
         conta: { type: Schema.Types.ObjectId, ref: 'Conta', default: null },
         desde: { type: Date, default: null },
+        ordem: { type: Number, default: null }, // prioridade entre as regras (menor primeiro)
       },
       ignoradosSalario: { type: [String], default: [] }, // salários cujo depósito foi apagado à mão
     },

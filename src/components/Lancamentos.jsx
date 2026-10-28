@@ -195,7 +195,8 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
   const opcoesConta = (excluir) => [...contasAtivas, ...(f.conta && !contasAtivas.some((c) => c._id === f.conta) ? contas.filter((c) => c._id === f.conta) : [])]
     .filter((c) => c._id !== excluir);
   // pagar com o saldo do mês ou com dinheiro guardado (poupança ou meta)
-  const mesDoGasto = String(f.data || '').slice(0, 7);
+  const { mesDaData } = useDados();
+  const mesDoGasto = f.data ? mesDaData(`${String(f.data).slice(0, 10)}T12:00:00Z`) : '';
   useEffect(() => {
     if (!aberto || f.tipo !== 'despesa' || !/^\d{4}-\d{2}$/.test(mesDoGasto) || !f.moeda) return;
     let vivo = true;
@@ -209,7 +210,7 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
   const poupanca = metas.find((m) => m.tipo === 'poupanca' && !m.arquivada);
   const valorNum = lerNumero(f.valor) || 0;
   // ao editar um gasto do mesmo mês que já saía do saldo, ele não conta contra si mesmo
-  const jaNoSaldo = !novo && item?.tipo === 'despesa' && !item.meta && String(item.data).slice(0, 7) === mesDoGasto && item.moeda === f.moeda ? Number(item.valor) : 0;
+  const jaNoSaldo = !novo && item?.tipo === 'despesa' && !item.meta && mesDaData(item.data) === mesDoGasto && item.moeda === f.moeda ? Number(item.valor) : 0;
   const disponivel = saldoMes == null ? null : saldoMes + jaNoSaldo;
   const faltaSaldo = podePagarComGuardado && !f.meta && disponivel != null && valorNum > 0 && valorNum > disponivel + 0.004;
   const sobraNaMeta = metaSel && metaSel.moeda === f.moeda ? metaSel.guardado + (item?.meta === metaSel._id ? Number(item.valor) : 0) - valorNum : null;
