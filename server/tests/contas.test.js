@@ -152,3 +152,20 @@ test('dinheiro separado para meta e viagem sai da conta sem mudar o patrimônio'
   const r = resumoViagem(viagem, gastos, (v) => v, [], new Date('2026-02-05'), reservasViagem);
   assert.deepEqual([r.reservado, r.gastoReserva, r.saldoReserva], [1200, 300, 900]);
 });
+
+test('depósitos em metas saem do saldo do mês e do relatório', async () => {
+  const { guardadoNoMes, relatorioAnual } = await import('../contas.js');
+  const metas = [{ _id: 'm', moeda: 'EUR' }, { _id: 'b', moeda: 'BRL' }];
+  const contribuicoes = [
+    { meta: 'm', valor: 100, data: '2026-03-05T12:00:00Z' },
+    { meta: 'm', valor: -30, data: '2026-03-20T12:00:00Z' },
+    { meta: 'b', valor: 600, data: '2026-03-21T12:00:00Z' },
+    { meta: 'm', valor: 50, data: '2026-04-01T12:00:00Z' },
+  ];
+  const conv = (v, m) => (m === 'BRL' ? v / 6 : v);
+  assert.equal(guardadoNoMes(contribuicoes, metas, conv, '2026-03'), 170);
+  const r = relatorioAnual({ ano: 2026, lancamentos: [{ tipo: 'receita', valor: 1000, moeda: 'EUR', data: '2026-03-01T12:00:00Z' }], categorias: [], contribuicoes, metas, conv });
+  assert.equal(r.saldo[2], 830);
+  assert.equal(r.totais.metas, 220);
+  assert.equal(r.totais.saldo, 780);
+});

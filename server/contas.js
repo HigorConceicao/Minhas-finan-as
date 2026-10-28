@@ -296,10 +296,21 @@ export function movimentosSeparados({ contribuicoes = [], metas = [], reservasVi
  * (com o mês a mês de cada uma) e as despesas de categorias marcadas como dedutíveis.
  * Transferências e ajustes de saldo não contam como entrada nem saída.
  */
-export function relatorioAnual({ ano, lancamentos, categorias, movsRend = [], contasRend = [], conv }) {
+/**
+ * Quanto foi guardado nas metas num mês (depósitos menos retiradas), na moeda base.
+ * Sai do saldo do mês: dinheiro guardado não está mais livre para gastar.
+ */
+export function guardadoNoMes(contribuicoes, metas, conv, mes) {
+  const moeda = new Map(metas.map((m) => [idDe(m), m.moeda]));
+  return round2(contribuicoes.filter((c) => mesDe(c.data) === mes && moeda.has(idDe(c.meta)))
+    .reduce((s, c) => s + conv(Number(c.valor), moeda.get(idDe(c.meta))), 0));
+}
+
+export function relatorioAnual({ ano, lancamentos, categorias, movsRend = [], contasRend = [], contribuicoes = [], metas = [], conv }) {
   const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, '0')}`);
   const vazio = () => meses.map(() => 0);
   const entradas = vazio(), saidas = vazio(), rendimentos = vazio();
+  const guardado = meses.map((m) => guardadoNoMes(contribuicoes, metas, conv, m));
   const porCat = new Map();
   const catMap = new Map(categorias.map((c) => [idDe(c), c]));
   const dedutiveis = [];
@@ -330,9 +341,9 @@ export function relatorioAnual({ ano, lancamentos, categorias, movsRend = [], co
   }).sort((a, b) => b.total - a.total);
   return {
     ano, meses,
-    entradas: r2(entradas), saidas: r2(saidas), rendimentos: r2(rendimentos),
-    saldo: meses.map((_, i) => round2(entradas[i] - saidas[i])),
-    totais: { entradas: soma(entradas), saidas: soma(saidas), rendimentos: soma(rendimentos), saldo: round2(soma(entradas) - soma(saidas)), dedutiveis: round2(dedutiveis.reduce((s, d) => s + d.valorBase, 0)) },
+    entradas: r2(entradas), saidas: r2(saidas), rendimentos: r2(rendimentos), metas: guardado,
+    saldo: meses.map((_, i) => round2(entradas[i] - saidas[i] - guardado[i])),
+    totais: { entradas: soma(entradas), saidas: soma(saidas), rendimentos: soma(rendimentos), metas: soma(guardado), saldo: round2(soma(entradas) - soma(saidas) - soma(guardado)), dedutiveis: round2(dedutiveis.reduce((s, d) => s + d.valorBase, 0)) },
     categorias: categoriasOut,
     dedutiveis: dedutiveis.sort((a, b) => t(a.data) - t(b.data)),
   };

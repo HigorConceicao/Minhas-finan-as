@@ -26,15 +26,21 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
         <p className="text-sm font-semibold opacity-75">{t('visao.saldoMes')}</p>
         <p className="num mt-1 text-4xl font-extrabold tracking-tight sm:text-5xl">{dinheiro(resumo.saldo, base)}</p>
         {resumo.receitas > 0 && <p className="mt-1 text-sm opacity-75">{t('visao.pctReceitas', { p: pct((resumo.saldo / resumo.receitas) * 100, 0) })}</p>}
-        <div className="mt-6 grid grid-cols-2 gap-3">
+        <div className={`mt-6 grid gap-3 ${resumo.metasMes ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <div className="rounded-2xl bg-white/10 p-3">
             <p className="flex items-center gap-1.5 text-xs font-semibold opacity-80"><Icone nome="seta" className="h-3.5 w-3.5 -rotate-45" forte /> {t('visao.receitas')}</p>
-            <p className="num mt-1 text-lg font-bold">{dinheiro(resumo.receitas, base)}</p>
+            <p className={`num mt-1 font-bold ${resumo.metasMes ? 'text-base sm:text-lg' : 'text-lg'}`}>{dinheiro(resumo.receitas, base)}</p>
           </div>
           <div className="rounded-2xl bg-white/10 p-3">
             <p className="flex items-center gap-1.5 text-xs font-semibold opacity-80"><Icone nome="seta" className="h-3.5 w-3.5 rotate-[135deg]" forte /> {t('visao.despesas')}</p>
-            <p className="num mt-1 text-lg font-bold">{dinheiro(resumo.despesas, base)}</p>
+            <p className={`num mt-1 font-bold ${resumo.metasMes ? 'text-base sm:text-lg' : 'text-lg'}`}>{dinheiro(resumo.despesas, base)}</p>
           </div>
+          {resumo.metasMes !== 0 && resumo.metasMes != null && (
+            <button className="rounded-2xl bg-white/10 p-3 text-left hover:bg-white/15" onClick={() => irPara('metas')}>
+              <p className="flex items-center gap-1.5 text-xs font-semibold opacity-80"><Icone nome="meta" className="h-3.5 w-3.5" forte /> {t('visao.metasMes')}</p>
+              <p className="num mt-1 text-base font-bold sm:text-lg">{dinheiro(resumo.metasMes, base)}</p>
+            </button>
+          )}
         </div>
         <button className="btn mt-4 w-full bg-white text-capa hover:bg-white/90" onClick={novoLancamento}>
           <Icone nome="mais" className="h-4 w-4" forte /> {t('visao.novo').replace('+ ', '')}

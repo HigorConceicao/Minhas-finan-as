@@ -38,6 +38,8 @@ export default function Relatorio({ base, setBase }) {
     ['', ...r.meses.map(mesCurto), t('rel.total')],
     [t('rel.entradas'), ...r.entradas.map(num), num(r.totais.entradas)],
     [t('rel.saidas'), ...r.saidas.map(num), num(r.totais.saidas)],
+    [t('rel.metas'), ...r.metas.map(num), num(r.totais.metas)],
+    [t('rel.saldo'), ...r.saldo.map(num), num(r.totais.saldo)],
     [t('rel.rendimentos'), ...r.rendimentos.map(num), num(r.totais.rendimentos)],
     [],
     ...r.categorias.map((c) => [`${c.tipo === 'receita' ? '+' : '−'} ${c.nome || t('comum.semCategoria')}`, ...c.meses.map(num), num(c.total)]),
@@ -67,7 +69,8 @@ export default function Relatorio({ base, setBase }) {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Estatistica rotulo={t('rel.entradas')} valor={dinheiro(r.totais.entradas, r.base)} detalhe={`${t('rel.media')} ${dinheiro(r.totais.entradas / mesesComDados, r.base)}`} tom="pos" />
             <Estatistica rotulo={t('rel.saidas')} valor={dinheiro(r.totais.saidas, r.base)} detalhe={`${t('rel.media')} ${dinheiro(r.totais.saidas / mesesComDados, r.base)}`} tom="neg" />
-            <Estatistica rotulo={t('rel.saldo')} valor={dinheiro(r.totais.saldo, r.base)} tom={r.totais.saldo >= 0 ? 'pos' : 'neg'} />
+            <Estatistica rotulo={t('rel.saldo')} valor={dinheiro(r.totais.saldo, r.base)} tom={r.totais.saldo >= 0 ? 'pos' : 'neg'}
+              detalhe={r.totais.metas ? `${t('rel.metas')} ${dinheiro(r.totais.metas, r.base)}` : null} />
             <Estatistica rotulo={t('rel.rendimentos')} valor={dinheiro(r.totais.rendimentos, r.base)} detalhe={t('rel.rendimentosNota')} />
           </div>
 
@@ -76,6 +79,7 @@ export default function Relatorio({ base, setBase }) {
             <BarrasMensais meses={r.meses} moeda={r.base} aria={t('rel.porMes')} series={[
               { chave: 'e', rotulo: t('rel.entradas'), valores: r.entradas, classe: 'fill-pos', cor: 'bg-pos', texto: 'text-pos' },
               { chave: 's', rotulo: t('rel.saidas'), valores: r.saidas, classe: 'fill-neg', cor: 'bg-neg', texto: 'text-neg' },
+              ...(r.totais.metas ? [{ chave: 'm', rotulo: t('rel.metas'), valores: r.metas.map((x) => Math.max(0, x)), classe: 'fill-aviso', cor: 'bg-aviso', texto: 'text-aviso' }] : []),
               ...(r.totais.rendimentos > 0 ? [{ chave: 'r', rotulo: t('rel.rendimentos'), valores: r.rendimentos, classe: 'fill-marca', cor: 'bg-marca', texto: 'text-marca' }] : []),
             ]} />
             <div className="mt-4 overflow-x-auto">
@@ -84,15 +88,17 @@ export default function Relatorio({ base, setBase }) {
                   <th className="py-2 font-semibold" />
                   <th className="py-2 text-right font-semibold">{t('rel.entradas')}</th>
                   <th className="py-2 text-right font-semibold">{t('rel.saidas')}</th>
+                  {r.totais.metas !== 0 && <th className="py-2 text-right font-semibold">{t('visao.metasMes')}</th>}
                   <th className="py-2 text-right font-semibold">{t('rel.saldo')}</th>
                   <th className="py-2 text-right font-semibold">{t('rel.rendimentos')}</th>
                 </tr></thead>
                 <tbody className="divide-y divide-linha">
                   {r.meses.map((m, i) => (
-                    <tr key={m} className={!r.entradas[i] && !r.saidas[i] && !r.rendimentos[i] ? 'text-texto-3' : ''}>
+                    <tr key={m} className={!r.entradas[i] && !r.saidas[i] && !r.rendimentos[i] && !r.metas[i] ? 'text-texto-3' : ''}>
                       <td className="py-2 font-semibold">{mesCurto(m)}</td>
                       <td className="num py-2 text-right">{dinheiro(r.entradas[i], r.base)}</td>
                       <td className="num py-2 text-right">{dinheiro(r.saidas[i], r.base)}</td>
+                      {r.totais.metas !== 0 && <td className="num py-2 text-right">{dinheiro(r.metas[i], r.base)}</td>}
                       <td className={`num py-2 text-right font-semibold ${r.saldo[i] < 0 ? 'text-neg' : ''}`}>{dinheiro(r.saldo[i], r.base)}</td>
                       <td className="num py-2 text-right text-texto-2">{dinheiro(r.rendimentos[i], r.base)}</td>
                     </tr>

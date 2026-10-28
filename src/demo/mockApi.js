@@ -3,7 +3,7 @@ import {
   metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
 } from '../../server/finance.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes,
 } from '../../server/contas.js';
 
 const TAXAS = { EUR: 1, BRL: 6.2, USD: 1.08 };
@@ -104,16 +104,16 @@ function semear() {
 
   // metas: uma conjunta com prazo, uma individual sem prazo
   const casa = add('metas', { nome: 'Casa própria', icone: '🏠', cor: '#2952eb', valorAlvo: 40000, moeda: 'EUR', prazo: dia(30, 28), pessoas: ['Eu', 'Ana'], arquivada: false });
-  add('contribuicoes', { meta: casa._id, valor: 6000, data: dia(-8, 1), pessoa: 'Eu', nota: 'Saldo inicial' });
-  add('contribuicoes', { meta: casa._id, valor: 4000, data: dia(-8, 1), pessoa: 'Ana', nota: 'Saldo inicial' });
-  for (let n = -7; n <= 0; n++) {
+  add('contribuicoes', { meta: casa._id, valor: 6000, data: dia(-14, 1), pessoa: 'Eu', nota: 'Saldo inicial' });
+  add('contribuicoes', { meta: casa._id, valor: 4000, data: dia(-14, 1), pessoa: 'Ana', nota: 'Saldo inicial' });
+  for (let n = -2; n <= 0; n++) {
     if (n === 0 && hojeDia < 5) continue;
     add('contribuicoes', { meta: casa._id, valor: 600, data: dia(n, 5), pessoa: 'Eu', nota: '', conta: n >= -2 ? db.carteira[0]._id : null, valorConta: null });
-    add('contribuicoes', { meta: casa._id, valor: n === -3 ? 0 : 450, data: dia(n, 6), pessoa: 'Ana', nota: '' });
+    add('contribuicoes', { meta: casa._id, valor: 450, data: dia(n, 6), pessoa: 'Ana', nota: '' });
   }
   db.contribuicoes = db.contribuicoes.filter((c) => c.valor !== 0);
   const reserva = add('metas', { nome: 'Reserva de emergência', icone: '🛟', cor: '#0d8c54', valorAlvo: 6000, moeda: 'EUR', prazo: null, pessoas: [], arquivada: false });
-  for (let n = -5; n <= -1; n++) add('contribuicoes', { meta: reserva._id, valor: 300, data: dia(n, 28), pessoa: '', nota: '' });
+  for (let n = -2; n <= -1; n++) add('contribuicoes', { meta: reserva._id, valor: 300, data: dia(n, 28), pessoa: '', nota: '' });
   add('contribuicoes', { meta: reserva._id, valor: -250, data: dia(-2, 14), pessoa: '', nota: 'Conserto da bicicleta' });
   const viagem = add('metas', { nome: 'Viagem de fim de ano', icone: '✈️', cor: '#e0672b', valorAlvo: 2500, moeda: 'EUR', prazo: dia(2, 15), pessoas: [], arquivada: false });
   add('contribuicoes', { meta: viagem._id, valor: 900, data: dia(-2, 3), pessoa: '', nota: '' });
@@ -206,7 +206,8 @@ function resumo(q) {
   });
   return {
     mes, base, cambio: { fonte: 'reserva', taxas: TAXAS },
-    receitas: round2(receitas), despesas: round2(despesas), saldo: round2(receitas - despesas), quantidade: lancs.length,
+    ...(() => { const metasMes = guardadoNoMes(db.contribuicoes, db.metas, conv, mes); return { metasMes, saldo: round2(receitas - despesas - metasMes) }; })(),
+    receitas: round2(receitas), despesas: round2(despesas), quantidade: lancs.length,
     orcamentos, semCategoria: round2(porCat.get('sem') || 0),
     totalOrcado: round2(orcamentos.reduce((s, o) => s + (o.limite || 0), 0)),
     gastoOrcado: round2(orcamentos.filter((o) => o.limite).reduce((s, o) => s + o.gasto, 0)),
@@ -418,7 +419,7 @@ function rotear(method, path, q, body) {
     const base = ['EUR', 'BRL', 'USD'].includes(q.get('base')) ? q.get('base') : 'EUR';
     const doAno = (d) => new Date(d).getUTCFullYear() === ano;
     const atual = new Date().getUTCFullYear();
-    return { base, anos: [atual, atual - 1], ...relatorioAnual({ ano, lancamentos: db.lancamentos.filter((l) => doAno(l.data)), categorias: db.categorias, movsRend: db.movimentos.filter((m) => doAno(m.data)), contasRend: db.contas, conv: (v, m) => converter(v, m, base) }) };
+    return { base, anos: [atual, atual - 1], ...relatorioAnual({ ano, lancamentos: db.lancamentos.filter((l) => doAno(l.data)), categorias: db.categorias, movsRend: db.movimentos.filter((m) => doAno(m.data)), contasRend: db.contas, contribuicoes: db.contribuicoes, metas: db.metas, conv: (v, m) => converter(v, m, base) }) };
   }
   if (a === 'lembretes') return lembretes({ recorrentes: db.recorrentes, cartoes: db.carteira.filter((c) => c.tipo === 'cartao' && !c.arquivada), lancamentos: db.lancamentos, hoje: new Date(), dias: Number(q.get('dias')) || 7 });
   if (a === 'push') throw new Erro(400, 'Indisponível na demonstração');

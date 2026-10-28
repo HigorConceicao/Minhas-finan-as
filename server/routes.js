@@ -5,7 +5,7 @@ import {
   Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem,
 } from './models.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes,
 } from './contas.js';
 import { chavePublica, inscrever, cancelarInscricao, enviarTeste } from './lembretes.js';
 import {
@@ -315,6 +315,8 @@ api.get('/resumo', wrap(async (req, res) => {
   }));
 
   const metasResumo = await resumoMetas();
+  // depósitos em metas no mês saem do saldo do mês (retiradas voltam)
+  const metasMes = guardadoNoMes(await ContribuicaoMeta.find({ data: intervaloDoMes(mes) }).lean(), await Meta.find().lean(), conv, mes);
   const dadosCarteira = await carregarCarteira();
   const pat = patrimonio({ ...dadosCarteira, conv });
   const proximos = lembretes({
@@ -325,7 +327,7 @@ api.get('/resumo', wrap(async (req, res) => {
   res.json({
     mes, base, cambio: { fonte, data: dataCambio, taxas }, metas: metasResumo,
     patrimonio: { ativos: pat.ativos, passivos: pat.passivos, liquido: pat.liquido }, temContas: dadosCarteira.contas.length > 0, proximos,
-    receitas: round2(receitas), despesas: round2(despesas), saldo: round2(receitas - despesas),
+    receitas: round2(receitas), despesas: round2(despesas), metasMes, saldo: round2(receitas - despesas - metasMes),
     quantidade: lancs.length,
     orcamentos, semCategoria, totalOrcado, gastoOrcado, fracaoDoMes: round2(fracao),
     contas: contasResumo,
@@ -783,13 +785,14 @@ api.get('/relatorio', wrap(async (req, res) => {
   const { taxas } = await obterTaxas();
   const conv = (v, m) => converter(v, m, base, taxas);
   const intervalo = { $gte: new Date(Date.UTC(ano, 0, 1)), $lt: new Date(Date.UTC(ano + 1, 0, 1)) };
-  const [lancamentos, categorias, movsRend, contasRend, primeiro] = await Promise.all([
+  const [lancamentos, categorias, movsRend, contasRend, contribuicoes, metas, primeiro] = await Promise.all([
     Lancamento.find({ data: intervalo }).lean(), Categoria.find().lean(), Movimento.find({ data: intervalo }).lean(), ContaRendimento.find().lean(),
+    ContribuicaoMeta.find({ data: intervalo }).lean(), Meta.find().lean(),
     Lancamento.findOne().sort({ data: 1 }).lean(),
   ]);
   const anoAtual = new Date().getUTCFullYear();
   const desde = primeiro ? new Date(primeiro.data).getUTCFullYear() : anoAtual;
-  res.json({ base, anos: Array.from({ length: Math.max(1, anoAtual - desde + 1) }, (_, i) => anoAtual - i), ...relatorioAnual({ ano, lancamentos, categorias, movsRend, contasRend, conv }) });
+  res.json({ base, anos: Array.from({ length: Math.max(1, anoAtual - desde + 1) }, (_, i) => anoAtual - i), ...relatorioAnual({ ano, lancamentos, categorias, movsRend, contasRend, contribuicoes, metas, conv }) });
 }));
 
 // ---------- lembretes no celular ----------
