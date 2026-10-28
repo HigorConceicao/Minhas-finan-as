@@ -5,6 +5,7 @@ import { useT } from '../i18n.js';
 import { BotaoConfirmar, Campo, Carregando, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
 import Icone from './Icones.jsx';
 import SeletorOrigem, { TIPOS_ORIGEM, lembrarOrigem, origemInicial } from './Origem.jsx';
+import { valorDaRegraSalario as valorDaRegra } from '../../server/contas.js';
 import { useDados } from '../dados.jsx';
 
 const ESTADO = {
@@ -85,7 +86,16 @@ export default function Metas() {
   );
 }
 
-/** Poupança: dinheiro guardado sem valor-alvo, que acumula mês a mês */
+/** Resumo da regra do salário em uma frase */
+function textoRegra(meta, t) {
+  const r = meta.regraSalario;
+  const l = dinheiro(r.limite, meta.moeda);
+  if (r.modo === 'excedente') return t('metas.sal.resumo.excedente', { l });
+  const v = r.modo === 'pct' ? `${r.valor}%` : dinheiro(r.valor, meta.moeda);
+  return r.limite > 0 ? t('metas.sal.resumo.comLimite', { v, l }) : t('metas.sal.resumo.semLimite', { v });
+}
+
+/** Poupança: dinheiro guardado que acumula mês a mês (com objetivo opcional) */
 function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar }) {
   const t = useT();
   const { contas } = useDados();
@@ -103,7 +113,21 @@ function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar }) {
         </span>
         <Icone nome="direita" className="mt-1 h-4 w-4 opacity-70" forte />
       </button>
-      <p className="num mt-4 text-4xl font-extrabold tracking-tight">{dinheiro(meta.guardado, meta.moeda)}</p>
+      <div className="mt-4 flex items-end justify-between gap-2">
+        <p className="num text-4xl font-extrabold tracking-tight">{dinheiro(meta.guardado, meta.moeda)}</p>
+        {meta.valorAlvo > 0 && <p className="num pb-1 text-sm opacity-75">{t('metas.de')} {dinheiro(meta.valorAlvo, meta.moeda)}</p>}
+      </div>
+      {meta.valorAlvo > 0 && (
+        <div className="mt-3">
+          <div className="h-2.5 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-white" style={{ width: `${Math.min(100, meta.pct)}%` }} /></div>
+          <p className="num mt-1.5 flex flex-wrap justify-between gap-x-3 text-xs font-semibold opacity-85">
+            <span>{Math.round(meta.pct)}%{meta.prazo ? ` · ${t('metas.prazo', { d: dataCompleta(meta.prazo) })}` : ''}</span>
+            {meta.concluida ? <span>{t('metas.concluida')}</span>
+              : meta.porMesNecessario != null ? <span>{t('metas.porMesCurto', { v: dinheiro(meta.porMesNecessario, meta.moeda) })}</span>
+              : <span>{t('metas.faltam', { v: dinheiro(meta.falta, meta.moeda) })}</span>}
+          </p>
+        </div>
+      )}
       {esteMes !== 0 && <p className="num mt-1 text-sm opacity-80">{t('metas.esteMes', { v: `${esteMes > 0 ? '+' : '−'}${dinheiro(Math.abs(esteMes), meta.moeda)}` })}</p>}
       <button className="mt-4 flex w-full items-center gap-2 rounded-2xl bg-white/10 p-3 text-left text-sm hover:bg-white/15" onClick={aoConfigurar}>
         <Icone nome="recorrente" className="h-4 w-4 shrink-0" />
@@ -112,6 +136,11 @@ function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar }) {
             ? <>{t('metas.todoMes', { v: dinheiro(m.valor, meta.moeda), d: m.dia })}{conta && <span className="opacity-75"> · {conta.nome}</span>}</>
             : t('metas.ativarMensal')}
         </span>
+        <Icone nome="lapis" className="h-4 w-4 shrink-0 opacity-70" />
+      </button>
+      <button className="mt-2 flex w-full items-center gap-2 rounded-2xl bg-white/10 p-3 text-left text-sm hover:bg-white/15" onClick={aoConfigurar}>
+        <Icone nome="rendimento" className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1">{meta.regraSalario?.ativo ? textoRegra(meta, t) : t('metas.sal.ativar')}</span>
         <Icone nome="lapis" className="h-4 w-4 shrink-0 opacity-70" />
       </button>
       <div className="mt-4 grid grid-cols-2 gap-2">
@@ -225,14 +254,19 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
         <div>
           <div className="mb-2 flex items-end justify-between gap-2">
             <p className="num text-3xl font-extrabold tracking-tight">{dinheiro(meta.guardado, meta.moeda)}</p>
-            {!ehPoupanca && <p className="num pb-1 text-sm text-texto-3">{t('metas.de')} {dinheiro(meta.valorAlvo, meta.moeda)}</p>}
+            {(!ehPoupanca || meta.valorAlvo > 0) && <p className="num pb-1 text-sm text-texto-3">{t('metas.de')} {dinheiro(meta.valorAlvo, meta.moeda)}</p>}
           </div>
-          {!ehPoupanca && <BarraMeta meta={meta} />}
+          {(!ehPoupanca || meta.valorAlvo > 0) && <BarraMeta meta={meta} />}
           <LegendaPessoas meta={meta} />
         </div>
-        {ehPoupanca
-          ? <p className="text-sm text-texto-2">{meta.mensal?.valor > 0 ? t('metas.todoMes', { v: dinheiro(meta.mensal.valor, meta.moeda), d: meta.mensal.dia }) : t('metas.poupancaSub')}</p>
-          : <LinhaPlano meta={meta} />}
+        {(!ehPoupanca || meta.valorAlvo > 0) && <LinhaPlano meta={meta} />}
+        {ehPoupanca && (
+          <div className="space-y-1 text-sm text-texto-2">
+            {meta.mensal?.valor > 0 && <p>{t('metas.todoMes', { v: dinheiro(meta.mensal.valor, meta.moeda), d: meta.mensal.dia })}</p>}
+            {meta.regraSalario?.ativo && <p>{textoRegra(meta, t)}</p>}
+            {!meta.mensal?.valor && !meta.regraSalario?.ativo && <p>{t('metas.poupancaSub')}</p>}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <button className="btn-primario" onClick={() => aoGuardar(meta, 'deposito')}><Icone nome="mais" className="h-4 w-4" forte />{t('metas.guardar')}</button>
@@ -262,7 +296,7 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
                 <li key={c._id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">
-                      {c.lancamento ? t('metas.pagou', { d: c.nota }) : c.nota || (c.automatica ? t('metas.automatico') : c.valor < 0 ? t('metas.retirada') : t('metas.deposito'))}
+                      {c.lancamento ? t('metas.pagou', { d: c.nota }) : c.salario ? t('metas.sal.doSalario') : c.nota || (c.automatica ? t('metas.automatico') : c.valor < 0 ? t('metas.retirada') : t('metas.deposito'))}
                       {c.pessoa && <span className="font-normal text-texto-3"> · {c.pessoa}</span>}
                     </p>
                     <p className="truncate text-xs text-texto-3">{dataCompleta(c.data)}{c.conta && nomeConta(c.conta) && <> · {c.valor < 0 ? '→' : '←'} {nomeConta(c.conta)}</>}</p>
@@ -298,14 +332,34 @@ function FormMeta({ aberto, meta, aoFechar, aoSalvar, aoApagar }) {
   const novo = !meta?._id;
   const ehPoupanca = meta?.tipo === 'poupanca';
   const [f, setF] = useState({});
+  const [catsReceita, setCatsReceita] = useState([]);
+  const [ultimoSalario, setUltimoSalario] = useState(null);
   useEffect(() => {
     if (!aberto) return;
-    const mensal = { mensalValor: paraCampo(meta?.mensal?.valor || ''), mensalDia: String(meta?.mensal?.dia || 1), mensalConta: meta?.mensal?.conta || '' };
+    get('/categorias').then((cs) => {
+      const rec = cs.filter((c) => c.tipo === 'receita');
+      setCatsReceita(rec);
+      // categoria do salário: a já escolhida, ou a que se chama Salário/Gehalt/Salary
+      setF((x) => (x.salCategoria ? x : { ...x, salCategoria: (rec.find((c) => /sal[aá]r|gehalt|salary/i.test(c.nome)) || rec[0])?._id || '' }));
+    }).catch(() => {});
+    const r = meta?.regraSalario || {};
+    const mensal = {
+      mensalValor: paraCampo(meta?.mensal?.valor || ''), mensalDia: String(meta?.mensal?.dia || 1), mensalConta: meta?.mensal?.conta || '',
+      salAtivo: !!r.ativo, salModo: r.modo || 'excedente', salValor: paraCampo(r.valor || ''), salLimite: paraCampo(r.limite || ''), salCategoria: r.categoria || '', salConta: r.conta || '',
+    };
     setF(meta?._id
       ? { ...meta, valorAlvo: paraCampo(meta.valorAlvo), prazo: paraInput(meta.prazo), pessoas: (meta.pessoas || []).join(', '), ...mensal }
       : { nome: '', icone: '🎯', cor: CORES[0], valorAlvo: '', moeda: 'EUR', prazo: '', pessoas: '', jaGuardado: '', ...mensal });
   }, [aberto, meta]);
   const origens = contasAtivas.filter((c) => TIPOS_ORIGEM.includes(c.tipo));
+  // último salário da categoria, para mostrar um exemplo da regra
+  useEffect(() => {
+    if (!aberto || !f.salCategoria) return;
+    get(`/lancamentos?categoria=${f.salCategoria}`).then((ls) => setUltimoSalario(ls.find((l) => l.tipo === 'receita') || null)).catch(() => {});
+  }, [aberto, f.salCategoria]);
+  const regraAtual = { ativo: true, modo: f.salModo, valor: lerNumero(f.salValor) || 0, limite: lerNumero(f.salLimite) || 0 };
+  const exemploBase = ultimoSalario && ultimoSalario.moeda === f.moeda ? Number(ultimoSalario.valor) : null;
+  const exemplo = exemploBase != null ? valorDaRegra(regraAtual, exemploBase) : null;
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
 
   const salvar = async (e) => {
@@ -313,9 +367,13 @@ function FormMeta({ aberto, meta, aoFechar, aoSalvar, aoApagar }) {
     const alvo = lerNumero(f.valorAlvo);
     if (!f.nome?.trim()) return avisar(t('metas.deNome'), 'erro');
     if (!ehPoupanca && !(alvo > 0)) return avisar(t('metas.alvoInvalido'), 'erro');
+    if (f.salAtivo && !f.salCategoria) return avisar(t('erro.categoria_salario'), 'erro');
+    if (f.salAtivo && f.salModo === 'excedente' && !(lerNumero(f.salLimite) > 0)) return avisar(t('metas.sal.informeLimite'), 'erro');
+    if (f.salAtivo && f.salModo !== 'excedente' && !(lerNumero(f.salValor) > 0)) return avisar(t('lanc.informeValor'), 'erro');
     const corpo = {
+      regraSalario: { ativo: !!f.salAtivo, modo: f.salModo, valor: lerNumero(f.salValor) || 0, limite: lerNumero(f.salLimite) || 0, categoria: f.salCategoria || null, conta: f.salConta || null },
       mensal: { valor: lerNumero(f.mensalValor) || 0, dia: Number(f.mensalDia) || 1, conta: f.mensalConta || null },
-      nome: f.nome, icone: f.icone, cor: f.cor, valorAlvo: ehPoupanca ? 0 : alvo, moeda: f.moeda, prazo: ehPoupanca ? null : f.prazo || null,
+      nome: f.nome, icone: f.icone, cor: f.cor, valorAlvo: alvo > 0 ? alvo : 0, moeda: f.moeda, prazo: f.prazo || null,
       pessoas: String(f.pessoas || '').split(',').map((p) => p.trim()).filter(Boolean),
       ...(novo ? { jaGuardado: lerNumero(f.jaGuardado) || 0 } : {}),
     };
@@ -343,11 +401,54 @@ function FormMeta({ aberto, meta, aoFechar, aoSalvar, aoApagar }) {
             ))}
           </div>
         </Campo>
-        {!ehPoupanca && <div className="grid grid-cols-[1fr_auto] gap-3">
-          <Campo rotulo={t('metas.alvo')}><input id="meta-alvo" className="campo num text-xl font-bold" inputMode="decimal" value={f.valorAlvo ?? ''} onChange={set('valorAlvo')} placeholder="10.000" /></Campo>
+        {ehPoupanca && <p className="-mb-1 text-sm font-bold">{t('metas.objetivoPoupanca')}</p>}
+        {<div className="grid grid-cols-[1fr_auto] gap-3">
+          <Campo rotulo={ehPoupanca ? t('metas.alvoOpcional') : t('metas.alvo')}><input id="meta-alvo" className="campo num text-xl font-bold" inputMode="decimal" value={f.valorAlvo ?? ''} onChange={set('valorAlvo')} placeholder="10.000" /></Campo>
           <Campo rotulo={t('comum.moeda')}><select id="meta-moeda" className="campo" value={f.moeda} onChange={set('moeda')}><option>EUR</option><option>BRL</option><option>USD</option></select></Campo>
         </div>}
-        {!ehPoupanca && <Campo rotulo={t('metas.prazoCampo')}><input id="meta-prazo" type="date" className="campo" value={f.prazo || ''} onChange={set('prazo')} /></Campo>}
+        <Campo rotulo={t('metas.prazoCampo')}><input id="meta-prazo" type="date" className="campo" value={f.prazo || ''} onChange={set('prazo')} /></Campo>
+        <div className="space-y-3 rounded-2xl bg-sutil p-4">
+          <label htmlFor="meta-sal-ativo" className="flex cursor-pointer items-start gap-3">
+            <input id="meta-sal-ativo" type="checkbox" checked={!!f.salAtivo} onChange={(e) => setF((x) => ({ ...x, salAtivo: e.target.checked }))} className="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--marca))]" />
+            <span><span className="block text-sm font-bold">{t('metas.sal.titulo')}</span><span className="block text-xs text-texto-3">{t('metas.sal.sub')}</span></span>
+          </label>
+          {f.salAtivo && (
+            <>
+              <Segmentado className="bg-cartao" valor={f.salModo} aoMudar={(k) => setF((x) => ({ ...x, salModo: k }))}
+                opcoes={[['excedente', t('metas.sal.modo.excedente')], ['pct', t('metas.sal.modo.pct')], ['fixo', t('metas.sal.modo.fixo')]]} />
+              <div className="grid grid-cols-2 gap-3">
+                {f.salModo !== 'excedente' && (
+                  <Campo rotulo={f.salModo === 'pct' ? t('metas.sal.pct') : `${t('comum.valor')} (${f.moeda})`}>
+                    <input id="meta-sal-valor" className="campo num bg-cartao" inputMode="decimal" value={f.salValor ?? ''} onChange={set('salValor')} placeholder={f.salModo === 'pct' ? '10' : '200'} />
+                  </Campo>
+                )}
+                <Campo rotulo={f.salModo === 'excedente' ? t('metas.sal.acimaDe', { m: f.moeda }) : t('metas.sal.aPartirDe', { m: f.moeda })} className={f.salModo === 'excedente' ? 'col-span-2' : ''}>
+                  <input id="meta-sal-limite" className="campo num bg-cartao" inputMode="decimal" value={f.salLimite ?? ''} onChange={set('salLimite')} placeholder={f.salModo === 'excedente' ? '2.860' : t('metas.sal.qualquer')} />
+                </Campo>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Campo rotulo={t('metas.sal.categoria')}>
+                  <select id="meta-sal-cat" className="campo bg-cartao" value={f.salCategoria || ''} onChange={set('salCategoria')}>
+                    {!catsReceita.length && <option value="">—</option>}
+                    {catsReceita.map((c) => <option key={c._id} value={c._id}>{c.icone} {c.nome}</option>)}
+                  </select>
+                </Campo>
+                <Campo rotulo={t('orig.deOnde')}>
+                  <select id="meta-sal-conta" className="campo bg-cartao" value={f.salConta || ''} onChange={set('salConta')}>
+                    <option value="">{t('metas.sal.semConta')}</option>
+                    {origens.map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
+                  </select>
+                </Campo>
+              </div>
+              <p className="rounded-xl bg-cartao p-3 text-sm">
+                {exemplo != null
+                  ? t('metas.sal.exemplo', { s: dinheiro(exemploBase, f.moeda), v: dinheiro(exemplo, f.moeda), n: f.nome || '' })
+                  : t(`metas.sal.explica.${f.salModo}`, { l: dinheiro(lerNumero(f.salLimite) || 0, f.moeda), v: f.salModo === 'pct' ? `${lerNumero(f.salValor) || 0}%` : dinheiro(lerNumero(f.salValor) || 0, f.moeda) })}
+              </p>
+              <p className="text-xs text-texto-3">{t('metas.sal.dica')}</p>
+            </>
+          )}
+        </div>
         <div className="space-y-3 rounded-2xl bg-sutil p-4">
           <p className="text-sm font-bold">{t('metas.mensalTitulo')}</p>
           <div className="grid grid-cols-2 gap-3">

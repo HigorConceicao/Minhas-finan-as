@@ -178,3 +178,26 @@ test('depósito automático mensal: só a partir de quando foi ligado, sem repet
   assert.equal(d[0].valor, 200);
   assert.deepEqual(depositosAutomaticosDevidos({ ...meta, mensal: { ...meta.mensal, valor: 0 } }, [], new Date()), []);
 });
+
+test('Einkommensverteiler: excedente, porcentagem e fixo a partir de um salário', async () => {
+  const { valorDaRegraSalario, sincronizarRegraSalario } = await import('../contas.js');
+  assert.equal(valorDaRegraSalario({ ativo: true, modo: 'excedente', limite: 2860 }, 3100), 240);
+  assert.equal(valorDaRegraSalario({ ativo: true, modo: 'excedente', limite: 2860 }, 2800), 0);
+  assert.equal(valorDaRegraSalario({ ativo: true, modo: 'pct', valor: 10, limite: 2860 }, 3000), 300);
+  assert.equal(valorDaRegraSalario({ ativo: true, modo: 'pct', valor: 10, limite: 2860 }, 2500), 0);
+  assert.equal(valorDaRegraSalario({ ativo: true, modo: 'fixo', valor: 200 }, 2500), 200);
+  assert.equal(valorDaRegraSalario({ ativo: false, modo: 'fixo', valor: 200 }, 2500), 0);
+  const meta = { regraSalario: { ativo: true, modo: 'excedente', limite: 2860, categoria: 'sal', desde: '2026-03-01T10:00:00Z' }, ignoradosSalario: ['s4'] };
+  const salarios = [
+    { _id: 's1', tipo: 'receita', categoria: 'sal', valor: 3000, moeda: 'EUR', data: '2026-02-28T12:00:00Z' }, // antes de ligar
+    { _id: 's2', tipo: 'receita', categoria: 'sal', valor: 3100, moeda: 'EUR', data: '2026-03-28T12:00:00Z' },
+    { _id: 's3', tipo: 'receita', categoria: 'sal', valor: 3060, moeda: 'EUR', data: '2026-04-28T12:00:00Z' }, // já existe com valor velho
+    { _id: 's4', tipo: 'receita', categoria: 'sal', valor: 3500, moeda: 'EUR', data: '2026-05-28T12:00:00Z' }, // apagado à mão
+    { _id: 'x', tipo: 'receita', categoria: 'extra', valor: 900, moeda: 'EUR', data: '2026-05-10T12:00:00Z' },
+  ];
+  const existentes = [{ _id: 'c3', salario: 's3', valor: 100, data: '2026-04-28T12:00:00Z' }, { _id: 'c9', salario: 'apagado', valor: 50, data: '2026-04-01T12:00:00Z' }];
+  const r = sincronizarRegraSalario(meta, salarios, existentes, (v) => v);
+  assert.deepEqual(r.criar.map((c) => [c.salario, c.valor]), [['s2', 240]]);
+  assert.deepEqual(r.atualizar.map((c) => [c._id, c.valor]), [['c3', 200]]);
+  assert.deepEqual(r.apagar, ['c9']);
+});

@@ -5,7 +5,7 @@ import {
   Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem,
 } from './models.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes, sincronizarRegraSalario,
 } from './contas.js';
 import { chavePublica, inscrever, cancelarInscricao, enviarTeste } from './lembretes.js';
 import {
@@ -91,6 +91,24 @@ async function gerarDepositosAutomaticos(hoje = new Date()) {
         if (conta && (conta.arquivada || !ORIGENS.includes(conta.tipo))) conta = null;
         await ContribuicaoMeta.create({ ...d, conta: conta?._id || null, valorConta: await valorNaMoedaDaConta(conta, d.valor, meta.moeda, null, d.data), nota: '' });
       }
+    }
+    // distribuição do salário
+    for (const meta of await Meta.find({ 'regraSalario.ativo': true, arquivada: false }).lean()) {
+      const r = meta.regraSalario;
+      const salarios = await Lancamento.find({ tipo: 'receita', categoria: r.categoria, data: { $gte: new Date(new Date(r.desde).getTime() - 86400000) } }).lean();
+      const existentes = await ContribuicaoMeta.find({ meta: meta._id, salario: { $ne: null } }).lean();
+      const { taxas } = await obterTaxas();
+      const { criar, atualizar, apagar } = sincronizarRegraSalario(meta, salarios, existentes, (v, m) => converter(v, m, meta.moeda, taxas));
+      let conta = r.conta ? await Conta.findById(r.conta).lean() : null;
+      if (conta && (conta.arquivada || !ORIGENS.includes(conta.tipo))) conta = null;
+      for (const c of criar) {
+        await ContribuicaoMeta.create({ meta: meta._id, valor: c.valor, data: c.data, salario: c.salario, conta: conta?._id || null,
+          valorConta: await valorNaMoedaDaConta(conta, c.valor, meta.moeda, null, c.data), nota: '', pessoa: '' });
+      }
+      for (const c of atualizar) {
+        await ContribuicaoMeta.updateOne({ _id: c._id }, { valor: c.valor, data: c.data, valorConta: await valorNaMoedaDaConta(conta, c.valor, meta.moeda, null, c.data) });
+      }
+      if (apagar.length) await ContribuicaoMeta.deleteMany({ _id: { $in: apagar } });
     }
   })().finally(() => { gerandoDepositos = null; });
   return gerandoDepositos;
@@ -243,6 +261,7 @@ api.post('/lancamentos', wrap(async (req, res) => {
   await validarRetirada(dados);
   const l = await Lancamento.create(dados);
   await sincronizarRetirada(l.toObject());
+  if (l.tipo === 'receita') await gerarDepositosAutomaticos(); // salário: distribuição
   res.status(201).json(l);
 }));
 api.put('/lancamentos/:id', wrap(async (req, res) => {
@@ -258,12 +277,13 @@ api.put('/lancamentos/:id', wrap(async (req, res) => {
   await validarRetirada({ ...antes, ...dados });
   const l = await Lancamento.findByIdAndUpdate(req.params.id, dados, { new: true, runValidators: true });
   await sincronizarRetirada(l.toObject());
+  if (l.tipo === 'receita' || antes.tipo === 'receita') await gerarDepositosAutomaticos();
   res.json(l);
 }));
 api.delete('/lancamentos/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const l = await Lancamento.findByIdAndDelete(req.params.id);
-  if (l) await ContribuicaoMeta.deleteMany({ lancamento: l._id }); // o dinheiro volta para a poupança
+  if (l) await ContribuicaoMeta.deleteMany({ $or: [{ lancamento: l._id }, { salario: l._id }] }); // o dinheiro volta / a distribuição some
   // compra parcelada: ?todas=1 apaga também as outras parcelas
   if (l?.parcela?.grupo && req.query.todas === '1') await Lancamento.deleteMany({ 'parcela.grupo': l.parcela.grupo });
   if (l?.recorrente && l.competencia) {
@@ -524,8 +544,14 @@ api.post('/contas/:id/aplicar-rendimento', wrap(async (req, res) => {
 }));
 
 // ---------- metas de poupança ----------
-const camposMeta = ({ nome, icone, cor, valorAlvo, moeda, prazo, pessoas, arquivada, mensal }) =>
+const MODOS_SALARIO = ['excedente', 'pct', 'fixo'];
+const camposMeta = ({ nome, icone, cor, valorAlvo, moeda, prazo, pessoas, arquivada, mensal, regraSalario }) =>
   Object.fromEntries(Object.entries({
+    regraSalario: regraSalario === undefined ? undefined : {
+      ativo: !!regraSalario?.ativo, modo: MODOS_SALARIO.includes(regraSalario?.modo) ? regraSalario.modo : 'excedente',
+      valor: Math.max(0, round2(Number(regraSalario?.valor) || 0)), limite: Math.max(0, round2(Number(regraSalario?.limite) || 0)),
+      categoria: idOuNulo(regraSalario?.categoria) ?? null, conta: idOuNulo(regraSalario?.conta) ?? null,
+    },
     mensal: mensal === undefined ? undefined : {
       valor: Math.max(0, round2(Number(mensal?.valor) || 0)), dia: Math.min(31, Math.max(1, Math.floor(Number(mensal?.dia) || 1))),
       conta: idOuNulo(mensal?.conta) ?? null,
@@ -558,10 +584,12 @@ api.get('/metas', wrap(async (_req, res) => {
 api.post('/metas', wrap(async (req, res) => {
   const campos = camposMeta(req.body);
   if (campos.mensal?.valor > 0) campos.mensal.desde = new Date();
+  if (campos.regraSalario?.ativo) campos.regraSalario.desde = new Date();
   const meta = await Meta.create(campos);
   // "já guardado" vira a primeira contribuição
   const inicial = round2(Number(req.body?.jaGuardado) || 0);
   if (inicial > 0) await ContribuicaoMeta.create({ meta: meta._id, valor: inicial, data: new Date(), pessoa: '', nota: '' });
+  await gerarDepositosAutomaticos();
   res.status(201).json(await metaComMetricas(meta.toObject()));
 }));
 api.put('/metas/:id', wrap(async (req, res) => {
@@ -571,6 +599,11 @@ api.put('/metas/:id', wrap(async (req, res) => {
   const campos = camposMeta(req.body);
   // ao ligar o depósito automático, começa agora (não cria meses passados)
   if (campos.mensal) campos.mensal.desde = campos.mensal.valor > 0 ? (antes.mensal?.valor > 0 && antes.mensal?.desde ? antes.mensal.desde : new Date()) : null;
+  // a regra do salário vale a partir de quando foi ligada (não mexe em salários antigos)
+  if (campos.regraSalario) {
+    if (campos.regraSalario.ativo && !campos.regraSalario.categoria) return erro(res, 400, 'Escolha a categoria do salário', 'categoria_salario');
+    campos.regraSalario.desde = campos.regraSalario.ativo ? (antes.regraSalario?.ativo && antes.regraSalario?.desde ? antes.regraSalario.desde : new Date()) : null;
+  }
   const m = await Meta.findByIdAndUpdate(req.params.id, campos, { new: true, runValidators: true }).lean();
   await gerarDepositosAutomaticos();
   res.json(await metaComMetricas(m));
@@ -641,6 +674,7 @@ api.delete('/contribuicoes/:id', wrap(async (req, res) => {
   const c = await ContribuicaoMeta.findByIdAndDelete(req.params.id).lean();
   // depósito automático apagado não volta; retirada de um gasto apagada: o gasto passa a sair do saldo do mês
   if (c?.automatica && c.competencia) await Meta.updateOne({ _id: c.meta }, { $addToSet: { ignoradas: c.competencia } });
+  if (c?.salario) await Meta.updateOne({ _id: c.meta }, { $addToSet: { ignoradosSalario: String(c.salario) } });
   if (c?.lancamento) await Lancamento.updateOne({ _id: c.lancamento }, { meta: null });
   if (c?.reservaViagem) await ReservaViagem.deleteOne({ _id: c.reservaViagem }); // desfaz a separação para a viagem
   res.status(204).end();

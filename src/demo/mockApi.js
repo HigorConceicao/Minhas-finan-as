@@ -3,7 +3,7 @@ import {
   metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
 } from '../../server/finance.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes, sincronizarRegraSalario,
 } from '../../server/contas.js';
 
 const TAXAS = { EUR: 1, BRL: 6.2, USD: 1.08 };
@@ -104,7 +104,8 @@ function semear() {
 
   // metas: uma conjunta com prazo, uma individual sem prazo
   // poupança: 300 por mês, automático no dia 2, saindo da conta corrente
-  const poup = add('metas', { nome: 'Poupança', icone: '🐷', cor: '#0d8c54', valorAlvo: 0, moeda: 'EUR', prazo: null, pessoas: [], arquivada: false, tipo: 'poupanca', ignoradas: [],
+  const poup = add('metas', { nome: 'Poupança', icone: '🐷', cor: '#0d8c54', valorAlvo: 10000, moeda: 'EUR', prazo: dia(14, 28), pessoas: [], arquivada: false, tipo: 'poupanca', ignoradas: [], ignoradosSalario: [],
+    regraSalario: { ativo: true, modo: 'excedente', valor: 0, limite: 2200, categoria: c('Salário'), conta: giro._id, desde: dia(-2, 1) },
     mensal: { valor: 300, dia: 2, conta: giro._id, desde: dia(-2, 1) } });
   add('contribuicoes', { meta: poup._id, valor: 1500, data: dia(-14, 1), pessoa: '', nota: 'Saldo inicial', conta: null, valorConta: null });
   const casa = add('metas', { nome: 'Casa própria', icone: '🏠', cor: '#2952eb', valorAlvo: 40000, moeda: 'EUR', prazo: dia(30, 28), pessoas: ['Eu', 'Ana'], arquivada: false });
@@ -127,6 +128,11 @@ function semear() {
 const mensalDe = (b, antes) => {
   const valor = Math.max(0, round2(Number(b?.valor) || 0));
   return { valor, dia: Math.min(31, Math.max(1, Math.floor(Number(b?.dia) || 1))), conta: b?.conta || null, desde: valor > 0 ? (antes?.valor > 0 && antes?.desde ? antes.desde : agoraISO()) : null };
+};
+const regraDe = (b, antes) => {
+  const ativo = !!b?.ativo;
+  return { ativo, modo: ['excedente', 'pct', 'fixo'].includes(b?.modo) ? b.modo : 'excedente', valor: Math.max(0, round2(Number(b?.valor) || 0)), limite: Math.max(0, round2(Number(b?.limite) || 0)),
+    categoria: b?.categoria || null, conta: b?.conta || null, desde: ativo ? (antes?.ativo && antes?.desde ? antes.desde : agoraISO()) : null };
 };
 const metaComMetricas = (m) => ({ ...m, ...metricasMeta(m, db.contribuicoes.filter((c) => c.meta === m._id)) });
 
@@ -154,6 +160,17 @@ function gerarRecorrentes(hoje = new Date()) {
     for (const d of depositosAutomaticosDevidos(meta, db.contribuicoes.filter((c) => c.meta === meta._id), hoje)) {
       const conta = db.carteira.find((c) => c._id === d.conta && ORIGENS.includes(c.tipo)) || null;
       db.contribuicoes.push({ ...d, _id: novoId(), conta: conta?._id || null, valorConta: naMoedaDaConta(conta, d.valor, meta.moeda, null) });
+    }
+    // distribuição do salário (Einkommensverteiler)
+    if (meta.regraSalario?.ativo && !meta.arquivada) {
+      const existentes = db.contribuicoes.filter((c) => c.meta === meta._id && c.salario);
+      const { criar, atualizar, apagar } = sincronizarRegraSalario(meta, db.lancamentos, existentes, (v, m) => converter(v, m, meta.moeda));
+      const conta = db.carteira.find((c) => c._id === meta.regraSalario.conta && ORIGENS.includes(c.tipo)) || null;
+      for (const c of criar) db.contribuicoes.push({ _id: novoId(), meta: meta._id, valor: c.valor, data: c.data, salario: c.salario, conta: conta?._id || null, valorConta: naMoedaDaConta(conta, c.valor, meta.moeda, null), nota: '', pessoa: '' });
+      for (const c of atualizar) Object.assign(db.contribuicoes.find((x) => x._id === c._id), { valor: c.valor, data: c.data, valorConta: naMoedaDaConta(conta, c.valor, meta.moeda, null) });
+      db.contribuicoes = db.contribuicoes.filter((x) => !apagar.includes(x._id));
+    } else if (!meta.regraSalario?.ativo) {
+      // regra desligada: os depósitos já feitos ficam
     }
   }
 }
@@ -457,18 +474,18 @@ function rotear(method, path, q, body) {
       validarRetirada(dados);
       const docs = n > 1 && dados.tipo === 'despesa' ? gerarParcelas(dados, n, novoId()) : [dados];
       const criados = docs.map((x) => ({ _id: novoId(), recorrente: null, competencia: null, nota: '', categoria: null, ...x, createdAt: agoraISO() }));
-      db.lancamentos.push(...criados); sincronizarRetirada(criados[0]); return criados[0];
+      db.lancamentos.push(...criados); sincronizarRetirada(criados[0]); gerarRecorrentes(); return criados[0];
     }
     if (M === 'PUT') {
       const l = achar(a, id); const d = normalizar(a, body); const junto = definirValorConta({ ...l, ...d });
       if (junto.tipo !== 'despesa') d.meta = null;
       validarRetirada({ ...junto, ...('meta' in d ? { meta: d.meta } : {}) });
-      Object.assign(l, d, { valorConta: junto.valorConta }); sincronizarRetirada(l); return l;
+      Object.assign(l, d, { valorConta: junto.valorConta }); sincronizarRetirada(l); gerarRecorrentes(); return l;
     }
     if (M === 'DELETE') {
       const l = db.lancamentos.find((x) => x._id === id);
       if (l?.recorrente && l.competencia) { const r = db.recorrentes.find((x) => x._id === l.recorrente); if (r && !r.ignoradas.includes(l.competencia)) r.ignoradas.push(l.competencia); }
-      db.contribuicoes = db.contribuicoes.filter((c) => c.lancamento !== id);
+      db.contribuicoes = db.contribuicoes.filter((c) => c.lancamento !== id && c.salario !== id);
       db.lancamentos = db.lancamentos.filter((x) => x._id !== id && !(q.get('todas') === '1' && l?.parcela?.grupo && x.parcela?.grupo === l.parcela.grupo)); return null;
     }
   }
@@ -536,7 +553,7 @@ function rotear(method, path, q, body) {
   if (a === 'metas') {
     if (!id && M === 'GET') { gerarRecorrentes(); return [...db.metas].sort((x, y) => (x.arquivada - y.arquivada) || ((y.tipo === 'poupanca') - (x.tipo === 'poupanca'))).map(metaComMetricas); }
     if (!id && M === 'POST') {
-      const d = { _id: novoId(), icone: '🎯', cor: '#2952eb', moeda: 'EUR', prazo: null, pessoas: [], arquivada: false, ...limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas']), tipo: 'meta', ignoradas: [], mensal: mensalDe(body.mensal, null), createdAt: agoraISO() };
+      const d = { _id: novoId(), icone: '🎯', cor: '#2952eb', moeda: 'EUR', prazo: null, pessoas: [], arquivada: false, ...limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas']), tipo: 'meta', ignoradas: [], ignoradosSalario: [], mensal: mensalDe(body.mensal, null), regraSalario: regraDe(body.regraSalario, null), createdAt: agoraISO() };
       d.prazo = paraData(d.prazo); d.valorAlvo = round2(d.valorAlvo);
       db.metas.push(d);
       if (Number(body.jaGuardado) > 0) db.contribuicoes.push({ _id: novoId(), meta: d._id, valor: round2(body.jaGuardado), data: agoraISO(), pessoa: '', nota: '' });
@@ -546,6 +563,10 @@ function rotear(method, path, q, body) {
       const m = achar('metas', id); const d = limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas', 'arquivada']);
       if ('prazo' in d) d.prazo = paraData(d.prazo);
       if (body.mensal !== undefined) d.mensal = mensalDe(body.mensal, m.mensal);
+      if (body.regraSalario !== undefined) {
+        if (body.regraSalario?.ativo && !body.regraSalario.categoria) throw new Erro(400, 'Escolha a categoria do salário', 'categoria_salario');
+        d.regraSalario = regraDe(body.regraSalario, m.regraSalario);
+      }
       Object.assign(m, d); gerarRecorrentes();
       return metaComMetricas(m);
     }
@@ -566,6 +587,7 @@ function rotear(method, path, q, body) {
     const c = db.contribuicoes.find((x) => x._id === id);
     if (c?.automatica && c.competencia) { const m = db.metas.find((x) => x._id === c.meta); if (m) { m.ignoradas ||= []; if (!m.ignoradas.includes(c.competencia)) m.ignoradas.push(c.competencia); } }
     if (c?.lancamento) { const l = db.lancamentos.find((x) => x._id === c.lancamento); if (l) l.meta = null; }
+    if (c?.salario) { const m = db.metas.find((x) => x._id === c.meta); if (m) { m.ignoradosSalario ||= []; m.ignoradosSalario.push(String(c.salario)); } }
     if (c?.reservaViagem) db.reservasViagem = db.reservasViagem.filter((r) => r._id !== c.reservaViagem);
     db.contribuicoes = db.contribuicoes.filter((x) => x._id !== id); return null;
   }

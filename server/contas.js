@@ -352,6 +352,53 @@ export function separadoViagensNoMes(reservas, viagens, gastosReserva, conv, mes
   return round2(s);
 }
 
+// ---------- distribuição do salário (Einkommensverteiler) ----------
+
+/**
+ * Quanto de um salário vai para a meta/poupança, pela regra:
+ * - 'excedente': tudo o que passar de `limite` (ex.: salário 3.100, limite 2.860 → 240);
+ * - 'pct': `valor`% do salário; - 'fixo': `valor` fixo.
+ * Em 'pct' e 'fixo', `limite` (opcional) é o salário mínimo para a regra valer.
+ * `salario` já vem na moeda da meta.
+ */
+export function valorDaRegraSalario(regra, salario) {
+  const s = Number(salario) || 0, lim = Number(regra?.limite) || 0, v = Number(regra?.valor) || 0;
+  if (!regra?.ativo || s <= 0) return 0;
+  if (regra.modo === 'excedente') return round2(Math.max(0, s - lim));
+  if (lim > 0 && s < lim) return 0;
+  if (regra.modo === 'pct') return round2((s * Math.min(100, Math.max(0, v))) / 100);
+  return round2(Math.min(s, Math.max(0, v)));
+}
+
+/**
+ * Compara os salários recebidos (desde que a regra foi ligada) com os depósitos já feitos por ela.
+ * `salarios`: lançamentos de receita da categoria da regra; `existentes`: contribuições com `salario`.
+ * `conv(valor, moeda)` converte para a moeda da meta. Devolve o que criar, atualizar e apagar.
+ */
+export function sincronizarRegraSalario(meta, salarios, existentes, conv) {
+  const regra = meta.regraSalario;
+  const ignorados = new Set((meta.ignoradosSalario || []).map(String));
+  const porSalario = new Map(existentes.filter((c) => c.salario).map((c) => [idDe(c.salario), c]));
+  const criar = [], atualizar = [], apagar = [];
+  const validos = new Set();
+  if (regra?.ativo && regra.desde) {
+    const desde = diaISO(regra.desde);
+    for (const l of salarios) {
+      const id = idDe(l);
+      if (l.tipo !== 'receita' || idDe(l.categoria) !== idDe(regra.categoria) || diaISO(l.data) < desde || ignorados.has(id)) continue;
+      const base = round2(conv(Number(l.valor), l.moeda));
+      const v = valorDaRegraSalario(regra, base);
+      if (v <= 0) continue;
+      validos.add(id);
+      const ja = porSalario.get(id);
+      if (!ja) criar.push({ salario: id, valor: v, base, data: l.data });
+      else if (Math.abs(Number(ja.valor) - v) > 0.004 || diaISO(ja.data) !== diaISO(l.data)) atualizar.push({ _id: idDe(ja), valor: v, base, data: l.data });
+    }
+  }
+  for (const [id, c] of porSalario) if (!validos.has(id)) apagar.push(idDe(c));
+  return { criar, atualizar, apagar };
+}
+
 export function relatorioAnual({ ano, lancamentos, categorias, movsRend = [], contasRend = [], contribuicoes = [], metas = [], reservasViagem = [], viagens = [], conv }) {
   const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, '0')}`);
   const vazio = () => meses.map(() => 0);

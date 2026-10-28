@@ -133,6 +133,17 @@ export const Meta = model(
         desde: { type: Date, default: null },
       },
       ignoradas: { type: [String], default: [] },
+      // distribuição do salário (Einkommensverteiler): quando cai um salário, parte vai para cá
+      regraSalario: {
+        ativo: { type: Boolean, default: false },
+        modo: { type: String, enum: ['excedente', 'pct', 'fixo'], default: 'excedente' },
+        valor: { type: Number, default: 0, min: 0 }, // % ou valor fixo
+        limite: { type: Number, default: 0, min: 0 }, // excedente: acima de quanto; pct/fixo: salário mínimo
+        categoria: { type: Schema.Types.ObjectId, ref: 'Categoria', default: null },
+        conta: { type: Schema.Types.ObjectId, ref: 'Conta', default: null },
+        desde: { type: Date, default: null },
+      },
+      ignoradosSalario: { type: [String], default: [] }, // salários cujo depósito foi apagado à mão
     },
     opts
   )
@@ -154,6 +165,8 @@ export const ContribuicaoMeta = model(
       reservaViagem: { type: Schema.Types.ObjectId, ref: 'ReservaViagem', default: null, index: true },
       // depósito automático do mês `competencia`
       automatica: { type: Boolean, default: false },
+      // depósito vindo da regra do salário (o lançamento do salário)
+      salario: { type: Schema.Types.ObjectId, ref: 'Lancamento', default: null, index: true },
       competencia: { type: String, default: null },
       pessoa: { type: String, default: '' },
       nota: { type: String, default: '' },

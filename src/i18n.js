@@ -635,6 +635,44 @@ Object.assign(en.viag, { doSaldo: 'From the month’s balance', devolvidoSaldo: 
   origemDica: { saldo: 'Comes out of this month’s balance. Expenses paid with it don’t reduce the balance again.', meta: 'Comes out of your savings; the month’s balance doesn’t change.',
     conta: 'Leaves the account balance (on a card, it goes on the statement) and comes off the month’s balance.', volta: 'What’s left goes back wherever you choose.' } });
 
+
+Object.assign(pt.metas, {
+  objetivoPoupanca: 'Objetivo (opcional)', alvoOpcional: 'Valor a atingir', porMesCurto: '{v}/mês para chegar lá',
+  sal: {
+    titulo: 'Distribuir o salário (Einkommensverteiler)', sub: 'Quando o salário cair, uma parte vem para cá automaticamente.', ativar: 'Distribuir parte do salário para cá',
+    modo: { excedente: 'Excedente', pct: 'Porcentagem', fixo: 'Valor fixo' }, pct: 'Porcentagem (%)', acimaDe: 'Guardar o que passar de ({m})', aPartirDe: 'Só se o salário for a partir de ({m})',
+    qualquer: 'Qualquer valor', categoria: 'Categoria do salário', semConta: 'Não descontar de conta', informeLimite: 'Informe a partir de qual valor guardar.',
+    exemplo: 'Com o último salário de {s}, vão {v} para {n}.', explica: { excedente: 'Tudo o que passar de {l} vai para cá.', pct: '{v} de cada salário vai para cá.', fixo: '{v} de cada salário vai para cá.' },
+    dica: 'Vale para os salários lançados a partir de agora (à mão, recorrentes ou importados). O valor sai do saldo do mês.', doSalario: 'Do salário (distribuição)',
+    resumo: { excedente: 'Salário: guarda o que passar de {l}', comLimite: 'Salário: guarda {v} quando for a partir de {l}', semLimite: 'Salário: guarda {v}' },
+  },
+});
+Object.assign(de.metas, {
+  objetivoPoupanca: 'Ziel (optional)', alvoOpcional: 'Zielbetrag', porMesCurto: '{v}/Monat bis zum Ziel',
+  sal: {
+    titulo: 'Einkommensverteiler', sub: 'Wenn das Gehalt eingeht, fließt automatisch ein Teil hierher.', ativar: 'Einen Teil des Gehalts hierher verteilen',
+    modo: { excedente: 'Überschuss', pct: 'Prozent', fixo: 'Festbetrag' }, pct: 'Prozent (%)', acimaDe: 'Alles über ({m}) sparen', aPartirDe: 'Nur ab einem Gehalt von ({m})',
+    qualquer: 'Jeder Betrag', categoria: 'Gehaltskategorie', semConta: 'Von keinem Konto abziehen', informeLimite: 'Gib an, ab welchem Betrag gespart wird.',
+    exemplo: 'Beim letzten Gehalt von {s} gehen {v} an {n}.', explica: { excedente: 'Alles über {l} fließt hierher.', pct: '{v} jedes Gehalts fließen hierher.', fixo: '{v} jedes Gehalts fließen hierher.' },
+    dica: 'Gilt für Gehälter ab jetzt (manuell, Dauerauftrag oder Import). Der Betrag wird vom Monatssaldo abgezogen.', doSalario: 'Aus dem Gehalt (Verteiler)',
+    resumo: { excedente: 'Gehalt: spart alles über {l}', comLimite: 'Gehalt: spart {v} ab {l}', semLimite: 'Gehalt: spart {v}' },
+  },
+});
+Object.assign(en.metas, {
+  objetivoPoupanca: 'Goal (optional)', alvoOpcional: 'Target amount', porMesCurto: '{v}/month to get there',
+  sal: {
+    titulo: 'Split your salary', sub: 'When your salary arrives, part of it comes here automatically.', ativar: 'Send part of your salary here',
+    modo: { excedente: 'Surplus', pct: 'Percentage', fixo: 'Fixed amount' }, pct: 'Percentage (%)', acimaDe: 'Save everything above ({m})', aPartirDe: 'Only if the salary is at least ({m})',
+    qualquer: 'Any amount', categoria: 'Salary category', semConta: 'Don’t take it from an account', informeLimite: 'Enter the amount above which to save.',
+    exemplo: 'With your last salary of {s}, {v} would go to {n}.', explica: { excedente: 'Everything above {l} comes here.', pct: '{v} of each salary comes here.', fixo: '{v} of each salary comes here.' },
+    dica: 'Applies to salaries from now on (manual, recurring or imported). The amount comes off the month’s balance.', doSalario: 'From salary (split)',
+    resumo: { excedente: 'Salary: saves everything above {l}', comLimite: 'Salary: saves {v} from {l}', semLimite: 'Salary: saves {v}' },
+  },
+});
+Object.assign(pt.erro, { categoria_salario: 'Escolha a categoria do salário.' });
+Object.assign(de.erro, { categoria_salario: 'Wähle die Gehaltskategorie.' });
+Object.assign(en.erro, { categoria_salario: 'Choose the salary category.' });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
