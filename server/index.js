@@ -53,7 +53,7 @@ app.use('/api', api);
 // erros da API
 app.use('/api', (err, _req, res, _next) => {
   if (err.name === 'ValidationError' || err.name === 'CastError') return res.status(400).json({ erro: err.message, codigo: 'dados_invalidos' });
-  if (err.status && err.status < 500) return res.status(err.status).json({ erro: err.message, codigo: err.codigo || null });
+  if (err.status && err.status < 500) return res.status(err.status).json({ erro: err.message, codigo: err.codigo || null, dados: err.dados });
   console.error(err);
   res.status(500).json({ erro: 'Erro interno', codigo: 'erro_interno' });
 });

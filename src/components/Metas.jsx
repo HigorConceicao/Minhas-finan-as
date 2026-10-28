@@ -4,7 +4,7 @@ import { dataCompleta, dinheiro, hojeISO, lerNumero, mesAtual, mesCurto, mesNaFr
 import { useT } from '../i18n.js';
 import { BotaoConfirmar, Campo, Carregando, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
 import Icone from './Icones.jsx';
-import SeletorOrigem, { lembrarOrigem, origemInicial } from './Origem.jsx';
+import SeletorOrigem, { TIPOS_ORIGEM, lembrarOrigem, origemInicial } from './Origem.jsx';
 import { useDados } from '../dados.jsx';
 
 const ESTADO = {
@@ -12,7 +12,7 @@ const ESTADO = {
   andamento: 'bg-marca-suave text-marca', parada: 'bg-sutil text-texto-2',
 };
 const CORES = ['#2952eb', '#0d8c54', '#e0672b', '#8b5cf6', '#db2777', '#0ea5a4', '#c47a0a', '#475569'];
-const ICONES = ['🎯', '🏠', '✈️', '🚗', '🛟', '🎓', '💍', '🏖️', '💻', '👶', '🐾', '🎁'];
+const ICONES = ['🎯', '🐷', '💰', '🏠', '✈️', '🚗', '🛟', '🎓', '💍', '🏖️', '💻', '👶', '🐾', '🎁'];
 // tons para separar as pessoas numa meta conjunta
 const TONS = ['', 'opacity-60', 'opacity-35', 'opacity-20'];
 
@@ -27,7 +27,8 @@ export default function Metas() {
   useEffect(() => { carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar]);
 
   if (!lista) return <Carregando />;
-  const ativas = lista.filter((m) => !m.arquivada);
+  const poupanca = lista.find((m) => m.tipo === 'poupanca' && !m.arquivada);
+  const ativas = lista.filter((m) => !m.arquivada && m.tipo !== 'poupanca');
   const arquivadas = lista.filter((m) => m.arquivada);
 
   return (
@@ -40,6 +41,9 @@ export default function Metas() {
         <button className="btn-primario" onClick={() => setForm({})}><Icone nome="mais" className="h-4 w-4" forte />{t('metas.nova')}</button>
       </div>
 
+      {poupanca && <CartaoPoupanca meta={poupanca} aoAbrir={() => setDetalhe(poupanca)} aoGuardar={(tipo) => setDeposito({ meta: poupanca, tipo })} aoConfigurar={() => setForm(poupanca)} />}
+
+      {poupanca && <h3 className="px-1 pt-2 text-base">{t('metas.suasMetas')}</h3>}
       {!ativas.length && !arquivadas.length ? (
         <Vazio icone="meta" titulo={t('metas.nenhuma')} texto={t('metas.vazio')} acao={<button className="btn-primario" onClick={() => setForm({})}>{t('metas.criar')}</button>} />
       ) : (
@@ -78,6 +82,43 @@ export default function Metas() {
       <FormDeposito aberto={deposito !== null} meta={deposito?.meta} tipoInicial={deposito?.tipo} aoFechar={() => setDeposito(null)}
         aoSalvar={async () => { setDeposito(null); await carregar(); avisar(t('metas.registrado')); }} />
     </div>
+  );
+}
+
+/** Poupança: dinheiro guardado sem valor-alvo, que acumula mês a mês */
+function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar }) {
+  const t = useT();
+  const { contas } = useDados();
+  const serie = meta.serie || [];
+  const esteMes = serie.length ? serie.at(-1).guardado - (serie.length > 1 ? serie.at(-2).guardado : 0) : 0;
+  const m = meta.mensal;
+  const conta = contas.find((c) => c._id === m?.conta);
+  return (
+    <section className="overflow-hidden rounded-4xl bg-capa p-6 text-capa-texto shadow-flutua">
+      <button className="flex w-full items-start gap-3 text-left" onClick={aoAbrir}>
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15 text-2xl">{meta.icone}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-bold">{meta.nome}</span>
+          <span className="block text-xs opacity-75">{t('metas.poupancaSub')}</span>
+        </span>
+        <Icone nome="direita" className="mt-1 h-4 w-4 opacity-70" forte />
+      </button>
+      <p className="num mt-4 text-4xl font-extrabold tracking-tight">{dinheiro(meta.guardado, meta.moeda)}</p>
+      {esteMes !== 0 && <p className="num mt-1 text-sm opacity-80">{t('metas.esteMes', { v: `${esteMes > 0 ? '+' : '−'}${dinheiro(Math.abs(esteMes), meta.moeda)}` })}</p>}
+      <button className="mt-4 flex w-full items-center gap-2 rounded-2xl bg-white/10 p-3 text-left text-sm hover:bg-white/15" onClick={aoConfigurar}>
+        <Icone nome="recorrente" className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1">
+          {m?.valor > 0
+            ? <>{t('metas.todoMes', { v: dinheiro(m.valor, meta.moeda), d: m.dia })}{conta && <span className="opacity-75"> · {conta.nome}</span>}</>
+            : t('metas.ativarMensal')}
+        </span>
+        <Icone nome="lapis" className="h-4 w-4 shrink-0 opacity-70" />
+      </button>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button className="btn bg-white text-capa hover:bg-white/90" onClick={() => aoGuardar('deposito')}><Icone nome="mais" className="h-4 w-4" forte />{t('metas.guardar')}</button>
+        <button className="btn bg-white/15 text-capa-texto hover:bg-white/25" disabled={meta.guardado <= 0} onClick={() => aoGuardar('retirada')}><Icone nome="menos" className="h-4 w-4" forte />{t('metas.retirar')}</button>
+      </div>
+    </section>
   );
 }
 
@@ -176,6 +217,7 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
 
   const serie = meta.serie || [];
   const maxSerie = Math.max(meta.valorAlvo, ...serie.map((s) => s.guardado), 1);
+  const ehPoupanca = meta.tipo === 'poupanca';
 
   return (
     <Modal titulo={`${meta.icone} ${meta.nome}`} aberto={!!meta} aoFechar={aoFechar}>
@@ -183,12 +225,14 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
         <div>
           <div className="mb-2 flex items-end justify-between gap-2">
             <p className="num text-3xl font-extrabold tracking-tight">{dinheiro(meta.guardado, meta.moeda)}</p>
-            <p className="num pb-1 text-sm text-texto-3">{t('metas.de')} {dinheiro(meta.valorAlvo, meta.moeda)}</p>
+            {!ehPoupanca && <p className="num pb-1 text-sm text-texto-3">{t('metas.de')} {dinheiro(meta.valorAlvo, meta.moeda)}</p>}
           </div>
-          <BarraMeta meta={meta} />
+          {!ehPoupanca && <BarraMeta meta={meta} />}
           <LegendaPessoas meta={meta} />
         </div>
-        <LinhaPlano meta={meta} />
+        {ehPoupanca
+          ? <p className="text-sm text-texto-2">{meta.mensal?.valor > 0 ? t('metas.todoMes', { v: dinheiro(meta.mensal.valor, meta.moeda), d: meta.mensal.dia }) : t('metas.poupancaSub')}</p>
+          : <LinhaPlano meta={meta} />}
 
         <div className="grid grid-cols-2 gap-2">
           <button className="btn-primario" onClick={() => aoGuardar(meta, 'deposito')}><Icone nome="mais" className="h-4 w-4" forte />{t('metas.guardar')}</button>
@@ -217,7 +261,10 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
               {contribs.map((c) => (
                 <li key={c._id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{c.nota || (c.valor < 0 ? t('metas.retirada') : t('metas.deposito'))}{c.pessoa && <span className="font-normal text-texto-3"> · {c.pessoa}</span>}</p>
+                    <p className="truncate text-sm font-semibold">
+                      {c.lancamento ? t('metas.pagou', { d: c.nota }) : c.nota || (c.automatica ? t('metas.automatico') : c.valor < 0 ? t('metas.retirada') : t('metas.deposito'))}
+                      {c.pessoa && <span className="font-normal text-texto-3"> · {c.pessoa}</span>}
+                    </p>
                     <p className="truncate text-xs text-texto-3">{dataCompleta(c.data)}{c.conta && nomeConta(c.conta) && <> · {c.valor < 0 ? '→' : '←'} {nomeConta(c.conta)}</>}</p>
                   </div>
                   <span className={`num text-sm font-bold ${c.valor < 0 ? 'text-neg' : 'text-pos'}`}>{c.valor < 0 ? '−' : '+'}{dinheiro(Math.abs(c.valor), meta.moeda)}</span>
@@ -232,9 +279,11 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
         </div>
 
         <div className="flex flex-wrap justify-between gap-2 border-t border-linha pt-4">
-          <button className="btn-secundario" onClick={async () => { await put(`/metas/${meta._id}`, { arquivada: !meta.arquivada }); await aoMudar(); aoFechar(); }}>
-            {meta.arquivada ? t('metas.reativar') : t('metas.arquivar')}
-          </button>
+          {!ehPoupanca ? (
+            <button className="btn-secundario" onClick={async () => { await put(`/metas/${meta._id}`, { arquivada: !meta.arquivada }); await aoMudar(); aoFechar(); }}>
+              {meta.arquivada ? t('metas.reativar') : t('metas.arquivar')}
+            </button>
+          ) : <span />}
           <button className="btn-secundario" onClick={() => aoEditar(meta)}><Icone nome="lapis" className="h-4 w-4" />{t('comum.editar')}</button>
         </div>
       </div>
@@ -245,23 +294,28 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
 function FormMeta({ aberto, meta, aoFechar, aoSalvar, aoApagar }) {
   const t = useT();
   const avisar = useAviso();
+  const { contasAtivas } = useDados();
   const novo = !meta?._id;
+  const ehPoupanca = meta?.tipo === 'poupanca';
   const [f, setF] = useState({});
   useEffect(() => {
     if (!aberto) return;
+    const mensal = { mensalValor: paraCampo(meta?.mensal?.valor || ''), mensalDia: String(meta?.mensal?.dia || 1), mensalConta: meta?.mensal?.conta || '' };
     setF(meta?._id
-      ? { ...meta, valorAlvo: paraCampo(meta.valorAlvo), prazo: paraInput(meta.prazo), pessoas: (meta.pessoas || []).join(', ') }
-      : { nome: '', icone: '🎯', cor: CORES[0], valorAlvo: '', moeda: 'EUR', prazo: '', pessoas: '', jaGuardado: '' });
+      ? { ...meta, valorAlvo: paraCampo(meta.valorAlvo), prazo: paraInput(meta.prazo), pessoas: (meta.pessoas || []).join(', '), ...mensal }
+      : { nome: '', icone: '🎯', cor: CORES[0], valorAlvo: '', moeda: 'EUR', prazo: '', pessoas: '', jaGuardado: '', ...mensal });
   }, [aberto, meta]);
+  const origens = contasAtivas.filter((c) => TIPOS_ORIGEM.includes(c.tipo));
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
 
   const salvar = async (e) => {
     e.preventDefault();
     const alvo = lerNumero(f.valorAlvo);
     if (!f.nome?.trim()) return avisar(t('metas.deNome'), 'erro');
-    if (!(alvo > 0)) return avisar(t('metas.alvoInvalido'), 'erro');
+    if (!ehPoupanca && !(alvo > 0)) return avisar(t('metas.alvoInvalido'), 'erro');
     const corpo = {
-      nome: f.nome, icone: f.icone, cor: f.cor, valorAlvo: alvo, moeda: f.moeda, prazo: f.prazo || null,
+      mensal: { valor: lerNumero(f.mensalValor) || 0, dia: Number(f.mensalDia) || 1, conta: f.mensalConta || null },
+      nome: f.nome, icone: f.icone, cor: f.cor, valorAlvo: ehPoupanca ? 0 : alvo, moeda: f.moeda, prazo: ehPoupanca ? null : f.prazo || null,
       pessoas: String(f.pessoas || '').split(',').map((p) => p.trim()).filter(Boolean),
       ...(novo ? { jaGuardado: lerNumero(f.jaGuardado) || 0 } : {}),
     };
@@ -270,7 +324,7 @@ function FormMeta({ aberto, meta, aoFechar, aoSalvar, aoApagar }) {
   };
 
   return (
-    <Modal titulo={novo ? t('metas.novaTitulo') : t('metas.editarTitulo')} aberto={aberto} aoFechar={aoFechar}>
+    <Modal titulo={ehPoupanca ? f.nome || meta.nome : novo ? t('metas.novaTitulo') : t('metas.editarTitulo')} aberto={aberto} aoFechar={aoFechar}>
       <form onSubmit={salvar} className="space-y-4">
         <Campo rotulo={t('metas.nome')}><input id="meta-nome" className="campo" value={f.nome || ''} onChange={set('nome')} placeholder={t('metas.exNome')} /></Campo>
         <Campo grupo rotulo={t('metas.icone')}>
@@ -289,19 +343,35 @@ function FormMeta({ aberto, meta, aoFechar, aoSalvar, aoApagar }) {
             ))}
           </div>
         </Campo>
-        <div className="grid grid-cols-[1fr_auto] gap-3">
+        {!ehPoupanca && <div className="grid grid-cols-[1fr_auto] gap-3">
           <Campo rotulo={t('metas.alvo')}><input id="meta-alvo" className="campo num text-xl font-bold" inputMode="decimal" value={f.valorAlvo ?? ''} onChange={set('valorAlvo')} placeholder="10.000" /></Campo>
           <Campo rotulo={t('comum.moeda')}><select id="meta-moeda" className="campo" value={f.moeda} onChange={set('moeda')}><option>EUR</option><option>BRL</option><option>USD</option></select></Campo>
+        </div>}
+        {!ehPoupanca && <Campo rotulo={t('metas.prazoCampo')}><input id="meta-prazo" type="date" className="campo" value={f.prazo || ''} onChange={set('prazo')} /></Campo>}
+        <div className="space-y-3 rounded-2xl bg-sutil p-4">
+          <p className="text-sm font-bold">{t('metas.mensalTitulo')}</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo rotulo={`${t('comum.valor')} (${f.moeda || 'EUR'})`}><input id="meta-mensal-valor" className="campo num bg-cartao" inputMode="decimal" value={f.mensalValor ?? ''} onChange={set('mensalValor')} placeholder={t('metas.mensalNenhum')} /></Campo>
+            <Campo rotulo={t('rec.diaDoMes')}><input id="meta-mensal-dia" type="number" min="1" max="31" className="campo num bg-cartao" value={f.mensalDia ?? ''} onChange={set('mensalDia')} /></Campo>
+          </div>
+          {origens.length > 0 && (
+            <Campo rotulo={t('orig.deOnde')}>
+              <select id="meta-mensal-conta" className="campo bg-cartao" value={f.mensalConta || ''} onChange={set('mensalConta')}>
+                <option value="">{t('orig.nenhuma')}</option>
+                {origens.map((c) => <option key={c._id} value={c._id}>{c.nome}</option>)}
+              </select>
+            </Campo>
+          )}
+          <p className="text-xs text-texto-3">{t('metas.mensalDica')}</p>
         </div>
-        <Campo rotulo={t('metas.prazoCampo')}><input id="meta-prazo" type="date" className="campo" value={f.prazo || ''} onChange={set('prazo')} /></Campo>
-        {novo && (
+        {novo && !ehPoupanca && (
           <Campo rotulo={t('metas.jaGuardado')} dica={t('metas.jaGuardadoDica')}>
             <input id="meta-ja" className="campo num" inputMode="decimal" value={f.jaGuardado ?? ''} onChange={set('jaGuardado')} placeholder={t('comum.zero')} />
           </Campo>
         )}
-        <Campo rotulo={t('metas.pessoas')} dica={t('metas.pessoasDica')}><input id="meta-pessoas" className="campo" value={f.pessoas || ''} onChange={set('pessoas')} /></Campo>
+        {!ehPoupanca && <Campo rotulo={t('metas.pessoas')} dica={t('metas.pessoasDica')}><input id="meta-pessoas" className="campo" value={f.pessoas || ''} onChange={set('pessoas')} /></Campo>}
         <div className="flex flex-wrap justify-between gap-2 pt-2">
-          {!novo ? <BotaoConfirmar texto={t('metas.apagarConf')} aoConfirmar={() => aoApagar(meta._id)}>{t('metas.apagar')}</BotaoConfirmar> : <span />}
+          {!novo && !ehPoupanca ? <BotaoConfirmar texto={t('metas.apagarConf')} aoConfirmar={() => aoApagar(meta._id)}>{t('metas.apagar')}</BotaoConfirmar> : <span />}
           <div className="flex gap-2">
             <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
             <button className="btn-primario">{t('comum.salvar')}</button>

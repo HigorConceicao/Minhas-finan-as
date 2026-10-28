@@ -306,6 +306,26 @@ export function guardadoNoMes(contribuicoes, metas, conv, mes) {
     .reduce((s, c) => s + conv(Number(c.valor), moeda.get(idDe(c.meta))), 0));
 }
 
+/**
+ * Depósitos automáticos que já deviam ter sido feitos: um por mês, no dia escolhido,
+ * a partir de `mensal.desde` (nunca antes) até hoje, sem repetir nem refazer os apagados.
+ */
+export function depositosAutomaticosDevidos(meta, existentes = [], hoje = new Date()) {
+  const m = meta.mensal;
+  if (!m || !(Number(m.valor) > 0) || !m.desde || meta.arquivada) return [];
+  const feitos = new Set(existentes.filter((c) => c.automatica && c.competencia).map((c) => c.competencia));
+  const ignoradas = new Set(meta.ignoradas || []);
+  // compara por dia: o próprio dia de ligar e o dia de hoje contam
+  const desde = diaISO(m.desde), ate = diaISO(hoje);
+  const out = [];
+  for (const comp of mesesEntre(mesDe(m.desde), mesDe(hoje))) {
+    const data = diaNoMes(comp, Number(m.dia) || 1);
+    if (diaISO(data) < desde || diaISO(data) > ate || feitos.has(comp) || ignoradas.has(comp)) continue;
+    out.push({ meta: idDe(meta), valor: round2(m.valor), data: data.toISOString(), conta: m.conta ? idDe(m.conta) : null, automatica: true, competencia: comp, pessoa: '', nota: '' });
+  }
+  return out;
+}
+
 export function relatorioAnual({ ano, lancamentos, categorias, movsRend = [], contasRend = [], contribuicoes = [], metas = [], conv }) {
   const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, '0')}`);
   const vazio = () => meses.map(() => 0);

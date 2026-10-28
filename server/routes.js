@@ -5,7 +5,7 @@ import {
   Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem,
 } from './models.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos,
 } from './contas.js';
 import { chavePublica, inscrever, cancelarInscricao, enviarTeste } from './lembretes.js';
 import {
@@ -73,7 +73,68 @@ export async function gerarRecorrentes(hoje = new Date()) {
       }
     }
   }
+  await gerarDepositosAutomaticos(hoje);
   return criados;
+}
+
+/** Depósitos automáticos mensais nas metas/poupança (como as recorrências, um por mês) */
+let gerandoDepositos = null;
+async function gerarDepositosAutomaticos(hoje = new Date()) {
+  if (gerandoDepositos) return gerandoDepositos; // evita duplicar com requisições ao mesmo tempo
+  gerandoDepositos = (async () => {
+    const metas = await Meta.find({ 'mensal.valor': { $gt: 0 }, arquivada: false }).lean();
+    for (const meta of metas) {
+      const existentes = await ContribuicaoMeta.find({ meta: meta._id, automatica: true }, 'automatica competencia').lean();
+      for (const d of depositosAutomaticosDevidos(meta, existentes, hoje)) {
+        let conta = null;
+        if (d.conta) conta = await Conta.findById(d.conta).lean();
+        if (conta && (conta.arquivada || !ORIGENS.includes(conta.tipo))) conta = null;
+        await ContribuicaoMeta.create({ ...d, conta: conta?._id || null, valorConta: await valorNaMoedaDaConta(conta, d.valor, meta.moeda, null, d.data), nota: '' });
+      }
+    }
+  })().finally(() => { gerandoDepositos = null; });
+  return gerandoDepositos;
+}
+
+/** A poupança existe sempre (é criada na primeira vez) */
+async function garantirPoupanca() {
+  if (await Meta.exists({ tipo: 'poupanca' })) return;
+  await Meta.create({ nome: 'Poupança', icone: '🐷', cor: '#0d8c54', valorAlvo: 0, moeda: 'EUR', tipo: 'poupanca' });
+}
+
+// ---------- gasto pago com dinheiro guardado (poupança ou meta) ----------
+const erroStatus = (status, msg, codigo, dados) => Object.assign(new Error(msg), { status, codigo, dados });
+async function valorNaMeta(l, meta) {
+  if (l.moeda === meta.moeda) return round2(Number(l.valor));
+  return round2(converter(Number(l.valor), l.moeda, meta.moeda, await taxasNaData(new Date(l.data || Date.now()).toISOString().slice(0, 10))));
+}
+/** Confere se há dinheiro guardado suficiente (sem contar a retirada já ligada a este lançamento) */
+async function validarRetirada(l) {
+  if (l.tipo !== 'despesa' || !l.meta) return;
+  const meta = await Meta.findById(l.meta).lean();
+  if (!meta) throw erroStatus(404, 'Meta não encontrada', 'dados_invalidos');
+  const v = await valorNaMeta(l, meta);
+  const contribs = await ContribuicaoMeta.find({ meta: meta._id, ...(l._id ? { lancamento: { $ne: l._id } } : {}) }).lean();
+  const guardado = round2(contribs.reduce((s, c) => s + Number(c.valor), 0));
+  if (v > guardado + 0.004) throw erroStatus(400, 'Retirada maior que o guardado', 'retirada_maior_guardado', { saldo: guardado, moeda: meta.moeda });
+}
+/** Cria, atualiza ou apaga a retirada ligada ao lançamento */
+async function sincronizarRetirada(l) {
+  const ligada = await ContribuicaoMeta.findOne({ lancamento: l._id }).lean();
+  const meta = l.tipo === 'despesa' && l.meta && !l.parcela?.grupo ? await Meta.findById(l.meta).lean() : null;
+  if (!meta) { if (ligada) await ContribuicaoMeta.deleteOne({ _id: ligada._id }); return; }
+  const v = await valorNaMeta(l, meta);
+  // o dinheiro volta para uma conta só se o guardado tinha saído de uma conta
+  const outras = await ContribuicaoMeta.find({ meta: meta._id, lancamento: { $ne: l._id } }).sort({ data: -1 }).lean();
+  const emConta = outras.filter((c) => c.conta).reduce((s, c) => s + Number(c.valor), 0);
+  let conta = null;
+  if (emConta >= v - 0.004) {
+    const daCompra = l.conta ? await Conta.findById(l.conta).lean() : null;
+    conta = daCompra && ORIGENS.includes(daCompra.tipo) ? daCompra : await Conta.findById(outras.find((c) => c.conta && c.valor > 0)?.conta).lean();
+  }
+  const dados = { meta: meta._id, valor: -v, data: l.data, conta: conta?._id || null, valorConta: await valorNaMoedaDaConta(conta, -v, meta.moeda, null, l.data), nota: l.descricao, lancamento: l._id, pessoa: '' };
+  if (ligada) await ContribuicaoMeta.updateOne({ _id: ligada._id }, dados);
+  else await ContribuicaoMeta.create(dados);
 }
 
 // ---------- rendimento automático: lança os juros dos meses encerrados ----------
@@ -113,10 +174,10 @@ api.delete('/categorias/:id', wrap(async (req, res) => {
 
 // ---------- lançamentos ----------
 const idOuNulo = (v) => (v === undefined ? undefined : v && validarId(v) ? v : null);
-const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota, conta, contaDestino, valorDestino, valorConta, fatura, ajuste, viagem, reservaViagem }) => {
+const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota, conta, contaDestino, valorDestino, valorConta, fatura, ajuste, viagem, reservaViagem, meta }) => {
   const d = Object.fromEntries(Object.entries({
     tipo, descricao, valor: valor === undefined ? undefined : round2(valor), moeda, data, categoria: idOuNulo(categoria), nota,
-    conta: idOuNulo(conta), contaDestino: idOuNulo(contaDestino), viagem: idOuNulo(viagem),
+    conta: idOuNulo(conta), contaDestino: idOuNulo(contaDestino), viagem: idOuNulo(viagem), meta: idOuNulo(meta),
     valorDestino: valorDestino === undefined ? undefined : valorDestino === null || valorDestino === '' ? null : round2(valorDestino),
     valorConta: valorConta === undefined ? undefined : valorConta === null || valorConta === '' ? null : round2(valorConta),
     fatura: fatura === undefined ? undefined : fatura || null, ajuste, reservaViagem: reservaViagem === undefined ? undefined : !!reservaViagem,
@@ -124,6 +185,7 @@ const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota
   if (d.tipo === 'transferencia') { d.categoria = null; d.viagem = null; d.valorConta = null; d.reservaViagem = false; }
   else if (d.tipo) { d.contaDestino = null; d.valorDestino = null; d.fatura = null; }
   if (d.reservaViagem) d.conta = null; // pago com o dinheiro separado da viagem
+  if (d.tipo && d.tipo !== 'despesa') d.meta = null; // só gasto sai da poupança
   return d;
 };
 /** Compra em moeda diferente da conta: sem valor informado, converte pelo câmbio do dia da compra */
@@ -171,13 +233,17 @@ api.post('/lancamentos', wrap(async (req, res) => {
   if (!validarTransferencia(dados)) return erro(res, 400, 'Escolha as duas contas da transferência', 'transferencia_contas');
   const parcelas = Math.floor(Number(req.body?.parcelas) || 1);
   if (parcelas > 1 && dados.tipo === 'despesa') {
+    dados.meta = null; // parcelado não sai da poupança
     await definirValorConta([dados]);
     const docs = gerarParcelas({ ...dados, data: new Date(dados.data).toISOString() }, parcelas, crypto.randomUUID());
     const criados = await Lancamento.insertMany(docs);
     return res.status(201).json(criados[0]);
   }
   await definirValorConta([dados]);
-  res.status(201).json(await Lancamento.create(dados));
+  await validarRetirada(dados);
+  const l = await Lancamento.create(dados);
+  await sincronizarRetirada(l.toObject());
+  res.status(201).json(l);
 }));
 api.put('/lancamentos/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
@@ -187,12 +253,17 @@ api.put('/lancamentos/:id', wrap(async (req, res) => {
     const atual = await Lancamento.findById(req.params.id).lean();
     if (atual) { const junto = { ...atual, ...dados }; await definirValorConta([junto]); dados.valorConta = junto.valorConta ?? null; }
   }
+  const antes = await Lancamento.findById(req.params.id).lean();
+  if (!antes) return erro(res, 404, 'Lançamento não encontrado');
+  await validarRetirada({ ...antes, ...dados });
   const l = await Lancamento.findByIdAndUpdate(req.params.id, dados, { new: true, runValidators: true });
-  l ? res.json(l) : erro(res, 404, 'Lançamento não encontrado');
+  await sincronizarRetirada(l.toObject());
+  res.json(l);
 }));
 api.delete('/lancamentos/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const l = await Lancamento.findByIdAndDelete(req.params.id);
+  if (l) await ContribuicaoMeta.deleteMany({ lancamento: l._id }); // o dinheiro volta para a poupança
   // compra parcelada: ?todas=1 apaga também as outras parcelas
   if (l?.parcela?.grupo && req.query.todas === '1') await Lancamento.deleteMany({ 'parcela.grupo': l.parcela.grupo });
   if (l?.recorrente && l.competencia) {
@@ -314,6 +385,7 @@ api.get('/resumo', wrap(async (req, res) => {
     };
   }));
 
+  await garantirPoupanca();
   const metasResumo = await resumoMetas();
   // depósitos em metas no mês saem do saldo do mês (retiradas voltam)
   const metasMes = guardadoNoMes(await ContribuicaoMeta.find({ data: intervaloDoMes(mes) }).lean(), await Meta.find().lean(), conv, mes);
@@ -450,8 +522,12 @@ api.post('/contas/:id/aplicar-rendimento', wrap(async (req, res) => {
 }));
 
 // ---------- metas de poupança ----------
-const camposMeta = ({ nome, icone, cor, valorAlvo, moeda, prazo, pessoas, arquivada }) =>
+const camposMeta = ({ nome, icone, cor, valorAlvo, moeda, prazo, pessoas, arquivada, mensal }) =>
   Object.fromEntries(Object.entries({
+    mensal: mensal === undefined ? undefined : {
+      valor: Math.max(0, round2(Number(mensal?.valor) || 0)), dia: Math.min(31, Math.max(1, Math.floor(Number(mensal?.dia) || 1))),
+      conta: idOuNulo(mensal?.conta) ?? null,
+    },
     nome, icone, cor, valorAlvo: valorAlvo === undefined ? undefined : round2(valorAlvo), moeda,
     prazo: prazo === undefined ? undefined : prazo || null,
     pessoas: Array.isArray(pessoas) ? [...new Set(pessoas.map((p) => String(p).trim()).filter(Boolean))].slice(0, 6) : undefined,
@@ -466,16 +542,21 @@ async function resumoMetas() {
   const metas = await Meta.find({ arquivada: false }).sort({ createdAt: 1 }).lean();
   return Promise.all(metas.map(async (m) => {
     const x = await metaComMetricas(m);
-    return { _id: x._id, nome: x.nome, icone: x.icone, cor: x.cor, moeda: x.moeda, valorAlvo: x.valorAlvo, guardado: x.guardado, pct: x.pct, estado: x.estado, prazo: x.prazo };
+    return { _id: x._id, nome: x.nome, icone: x.icone, cor: x.cor, moeda: x.moeda, valorAlvo: x.valorAlvo, guardado: x.guardado, pct: x.pct, estado: x.estado, prazo: x.prazo, tipo: x.tipo || 'meta' };
   }));
 }
 
 api.get('/metas', wrap(async (_req, res) => {
-  const metas = await Meta.find().sort({ arquivada: 1, createdAt: 1 }).lean();
+  await garantirPoupanca();
+  await gerarDepositosAutomaticos();
+  // a poupança vem primeiro
+  const metas = (await Meta.find().sort({ arquivada: 1, createdAt: 1 }).lean()).sort((a, b) => (b.tipo === 'poupanca') - (a.tipo === 'poupanca'));
   res.json(await Promise.all(metas.map(metaComMetricas)));
 }));
 api.post('/metas', wrap(async (req, res) => {
-  const meta = await Meta.create(camposMeta(req.body));
+  const campos = camposMeta(req.body);
+  if (campos.mensal?.valor > 0) campos.mensal.desde = new Date();
+  const meta = await Meta.create(campos);
   // "já guardado" vira a primeira contribuição
   const inicial = round2(Number(req.body?.jaGuardado) || 0);
   if (inicial > 0) await ContribuicaoMeta.create({ meta: meta._id, valor: inicial, data: new Date(), pessoa: '', nota: '' });
@@ -483,12 +564,19 @@ api.post('/metas', wrap(async (req, res) => {
 }));
 api.put('/metas/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  const m = await Meta.findByIdAndUpdate(req.params.id, camposMeta(req.body), { new: true, runValidators: true }).lean();
-  m ? res.json(await metaComMetricas(m)) : erro(res, 404, 'Meta não encontrada');
+  const antes = await Meta.findById(req.params.id).lean();
+  if (!antes) return erro(res, 404, 'Meta não encontrada');
+  const campos = camposMeta(req.body);
+  // ao ligar o depósito automático, começa agora (não cria meses passados)
+  if (campos.mensal) campos.mensal.desde = campos.mensal.valor > 0 ? (antes.mensal?.valor > 0 && antes.mensal?.desde ? antes.mensal.desde : new Date()) : null;
+  const m = await Meta.findByIdAndUpdate(req.params.id, campos, { new: true, runValidators: true }).lean();
+  await gerarDepositosAutomaticos();
+  res.json(await metaComMetricas(m));
 }));
 api.delete('/metas/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   await ContribuicaoMeta.deleteMany({ meta: req.params.id });
+  await Lancamento.updateMany({ meta: req.params.id }, { meta: null });
   await Meta.findByIdAndDelete(req.params.id);
   res.status(204).end();
 }));
@@ -547,7 +635,10 @@ api.put('/contribuicoes/:id', wrap(async (req, res) => {
 }));
 api.delete('/contribuicoes/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  await ContribuicaoMeta.findByIdAndDelete(req.params.id);
+  const c = await ContribuicaoMeta.findByIdAndDelete(req.params.id).lean();
+  // depósito automático apagado não volta; retirada de um gasto apagada: o gasto passa a sair do saldo do mês
+  if (c?.automatica && c.competencia) await Meta.updateOne({ _id: c.meta }, { $addToSet: { ignoradas: c.competencia } });
+  if (c?.lancamento) await Lancamento.updateOne({ _id: c.lancamento }, { meta: null });
   res.status(204).end();
 }));
 

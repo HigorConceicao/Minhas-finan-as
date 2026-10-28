@@ -169,3 +169,12 @@ test('depósitos em metas saem do saldo do mês e do relatório', async () => {
   assert.equal(r.totais.metas, 220);
   assert.equal(r.totais.saldo, 780);
 });
+
+test('depósito automático mensal: só a partir de quando foi ligado, sem repetir', async () => {
+  const { depositosAutomaticosDevidos } = await import('../contas.js');
+  const meta = { _id: 'p', mensal: { valor: 200, dia: 5, conta: null, desde: '2026-03-10T09:00:00Z' }, ignoradas: ['2026-05'] };
+  const d = depositosAutomaticosDevidos(meta, [{ automatica: true, competencia: '2026-04' }], new Date('2026-06-07T12:00:00Z'));
+  assert.deepEqual(d.map((x) => x.competencia), ['2026-06']); // março: dia 5 antes de ligar; abril feito; maio apagado
+  assert.equal(d[0].valor, 200);
+  assert.deepEqual(depositosAutomaticosDevidos({ ...meta, mensal: { ...meta.mensal, valor: 0 } }, [], new Date()), []);
+});

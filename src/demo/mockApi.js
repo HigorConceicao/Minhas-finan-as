@@ -3,7 +3,7 @@ import {
   metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
 } from '../../server/finance.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos,
 } from '../../server/contas.js';
 
 const TAXAS = { EUR: 1, BRL: 6.2, USD: 1.08 };
@@ -103,6 +103,10 @@ function semear() {
   if (hojeDia >= 10) for (const [tipo, valor, descricao] of saidas[0]) add('movimentos', { conta: conta._id, tipo, valor, data: dia(0, 10), descricao, automatico: false });
 
   // metas: uma conjunta com prazo, uma individual sem prazo
+  // poupança: 300 por mês, automático no dia 2, saindo da conta corrente
+  const poup = add('metas', { nome: 'Poupança', icone: '🐷', cor: '#0d8c54', valorAlvo: 0, moeda: 'EUR', prazo: null, pessoas: [], arquivada: false, tipo: 'poupanca', ignoradas: [],
+    mensal: { valor: 300, dia: 2, conta: giro._id, desde: dia(-2, 1) } });
+  add('contribuicoes', { meta: poup._id, valor: 1500, data: dia(-14, 1), pessoa: '', nota: 'Saldo inicial', conta: null, valorConta: null });
   const casa = add('metas', { nome: 'Casa própria', icone: '🏠', cor: '#2952eb', valorAlvo: 40000, moeda: 'EUR', prazo: dia(30, 28), pessoas: ['Eu', 'Ana'], arquivada: false });
   add('contribuicoes', { meta: casa._id, valor: 6000, data: dia(-14, 1), pessoa: 'Eu', nota: 'Saldo inicial' });
   add('contribuicoes', { meta: casa._id, valor: 4000, data: dia(-14, 1), pessoa: 'Ana', nota: 'Saldo inicial' });
@@ -120,6 +124,10 @@ function semear() {
   add('contribuicoes', { meta: viagem._id, valor: 300, data: dia(-1, 3), pessoa: '', nota: '' });
 }
 
+const mensalDe = (b, antes) => {
+  const valor = Math.max(0, round2(Number(b?.valor) || 0));
+  return { valor, dia: Math.min(31, Math.max(1, Math.floor(Number(b?.dia) || 1))), conta: b?.conta || null, desde: valor > 0 ? (antes?.valor > 0 && antes?.desde ? antes.desde : agoraISO()) : null };
+};
 const metaComMetricas = (m) => ({ ...m, ...metricasMeta(m, db.contribuicoes.filter((c) => c.meta === m._id)) });
 
 // ---------- regras ----------
@@ -141,6 +149,37 @@ function gerarRecorrentes(hoje = new Date()) {
       });
     }
   }
+  // depósitos automáticos mensais nas metas/poupança
+  for (const meta of db.metas) {
+    for (const d of depositosAutomaticosDevidos(meta, db.contribuicoes.filter((c) => c.meta === meta._id), hoje)) {
+      const conta = db.carteira.find((c) => c._id === d.conta && ORIGENS.includes(c.tipo)) || null;
+      db.contribuicoes.push({ ...d, _id: novoId(), conta: conta?._id || null, valorConta: naMoedaDaConta(conta, d.valor, meta.moeda, null) });
+    }
+  }
+}
+
+// gasto pago com dinheiro guardado: a retirada fica ligada ao lançamento
+function valorNaMeta(l, meta) { return l.moeda === meta.moeda ? round2(l.valor) : round2(converter(l.valor, l.moeda, meta.moeda)); }
+function validarRetirada(l) {
+  if (l.tipo !== 'despesa' || !l.meta) return;
+  const meta = achar('metas', l.meta);
+  const guardado = round2(db.contribuicoes.filter((c) => c.meta === meta._id && (!l._id || c.lancamento !== l._id)).reduce((s, c) => s + c.valor, 0));
+  if (valorNaMeta(l, meta) > guardado + 0.004) throw new Erro(400, 'Retirada maior que o guardado', 'retirada_maior_guardado', { saldo: guardado, moeda: meta.moeda });
+}
+function sincronizarRetirada(l) {
+  const ligada = db.contribuicoes.find((c) => c.lancamento === l._id);
+  const meta = l.tipo === 'despesa' && l.meta && !l.parcela?.grupo ? db.metas.find((m) => m._id === l.meta) : null;
+  if (!meta) { if (ligada) db.contribuicoes = db.contribuicoes.filter((c) => c !== ligada); return; }
+  const v = valorNaMeta(l, meta);
+  const outras = db.contribuicoes.filter((c) => c.meta === meta._id && c.lancamento !== l._id).sort((a, b) => (b.data > a.data ? 1 : -1));
+  const emConta = outras.filter((c) => c.conta).reduce((s, c) => s + c.valor, 0);
+  let conta = null;
+  if (emConta >= v - 0.004) {
+    const daCompra = db.carteira.find((c) => c._id === l.conta && ORIGENS.includes(c.tipo));
+    conta = daCompra || db.carteira.find((c) => c._id === outras.find((x) => x.conta && x.valor > 0)?.conta) || null;
+  }
+  const dados = { meta: meta._id, valor: -v, data: l.data, conta: conta?._id || null, valorConta: naMoedaDaConta(conta, -v, meta.moeda, null), nota: l.descricao, lancamento: l._id, pessoa: '' };
+  if (ligada) Object.assign(ligada, dados); else db.contribuicoes.push({ _id: novoId(), ...dados });
 }
 
 const doMes = (iso, mes) => String(iso).slice(0, 7) === mes;
@@ -220,7 +259,7 @@ function resumo(q) {
       };
     })(),
     metas: db.metas.filter((m) => !m.arquivada).map(metaComMetricas)
-      .map((x) => ({ _id: x._id, nome: x.nome, icone: x.icone, cor: x.cor, moeda: x.moeda, valorAlvo: x.valorAlvo, guardado: x.guardado, pct: x.pct, estado: x.estado, prazo: x.prazo })),
+      .map((x) => ({ _id: x._id, nome: x.nome, icone: x.icone, cor: x.cor, moeda: x.moeda, valorAlvo: x.valorAlvo, guardado: x.guardado, pct: x.pct, estado: x.estado, prazo: x.prazo, tipo: x.tipo || 'meta' })),
   };
 }
 
@@ -347,7 +386,7 @@ function rotaViagens(M, id, body, sub) {
 // ---------- roteador ----------
 const CAMPOS = {
   categorias: ['nome', 'tipo', 'cor', 'icone', 'orcamentoMensal', 'moeda', 'alertaPct', 'dedutivel'],
-  lancamentos: ['tipo', 'descricao', 'valor', 'moeda', 'data', 'categoria', 'nota', 'conta', 'contaDestino', 'valorDestino', 'valorConta', 'fatura', 'ajuste', 'viagem', 'reservaViagem'],
+  lancamentos: ['tipo', 'descricao', 'valor', 'moeda', 'data', 'categoria', 'nota', 'conta', 'contaDestino', 'valorDestino', 'valorConta', 'fatura', 'ajuste', 'viagem', 'reservaViagem', 'meta'],
   recorrentes: ['tipo', 'descricao', 'valor', 'moeda', 'categoria', 'conta', 'frequencia', 'diaDoMes', 'inicio', 'fim', 'ativo'],
   carteira: ['nome', 'tipo', 'instituicao', 'moeda', 'saldoInicial', 'dataInicio', 'cor', 'arquivada', 'limite', 'diaFechamento', 'diaVencimento', 'contaPagamento'],
   viagens: ['nome', 'icone', 'cor', 'moeda', 'orcamento', 'inicio', 'fim', 'arquivada'],
@@ -361,7 +400,7 @@ const normalizar = (col, body) => {
   for (const k of ['valor', 'saldoInicial', 'limite', 'orcamento']) if (k in d) d[k] = round2(d[k]);
   if ('valorConta' in d) d.valorConta = d.valorConta === null || d.valorConta === '' ? null : round2(d.valorConta);
   if ('valorDestino' in d) d.valorDestino = d.valorDestino === null || d.valorDestino === '' ? null : round2(d.valorDestino);
-  for (const k of ['categoria', 'conta', 'contaDestino', 'viagem', 'contaPagamento', 'fatura']) if (k in d && !d[k]) d[k] = null;
+  for (const k of ['categoria', 'conta', 'contaDestino', 'viagem', 'contaPagamento', 'fatura', 'meta']) if (k in d && !d[k]) d[k] = null;
   if (col === 'lancamentos') {
     if (d.tipo === 'transferencia') { d.categoria = null; d.viagem = null; }
     else if (d.tipo) { d.contaDestino = null; d.valorDestino = null; d.fatura = null; }
@@ -399,14 +438,22 @@ function rotear(method, path, q, body) {
     if (M === 'POST') {
       const dados = definirValorConta(normalizar(a, body));
       const n = Math.floor(Number(body?.parcelas) || 1);
+      if (n > 1 || dados.tipo !== 'despesa') dados.meta = null;
+      validarRetirada(dados);
       const docs = n > 1 && dados.tipo === 'despesa' ? gerarParcelas(dados, n, novoId()) : [dados];
       const criados = docs.map((x) => ({ _id: novoId(), recorrente: null, competencia: null, nota: '', categoria: null, ...x, createdAt: agoraISO() }));
-      db.lancamentos.push(...criados); return criados[0];
+      db.lancamentos.push(...criados); sincronizarRetirada(criados[0]); return criados[0];
     }
-    if (M === 'PUT') { const l = achar(a, id); const d = normalizar(a, body); const junto = definirValorConta({ ...l, ...d }); return Object.assign(l, d, { valorConta: junto.valorConta }); }
+    if (M === 'PUT') {
+      const l = achar(a, id); const d = normalizar(a, body); const junto = definirValorConta({ ...l, ...d });
+      if (junto.tipo !== 'despesa') d.meta = null;
+      validarRetirada({ ...junto, ...('meta' in d ? { meta: d.meta } : {}) });
+      Object.assign(l, d, { valorConta: junto.valorConta }); sincronizarRetirada(l); return l;
+    }
     if (M === 'DELETE') {
       const l = db.lancamentos.find((x) => x._id === id);
       if (l?.recorrente && l.competencia) { const r = db.recorrentes.find((x) => x._id === l.recorrente); if (r && !r.ignoradas.includes(l.competencia)) r.ignoradas.push(l.competencia); }
+      db.contribuicoes = db.contribuicoes.filter((c) => c.lancamento !== id);
       db.lancamentos = db.lancamentos.filter((x) => x._id !== id && !(q.get('todas') === '1' && l?.parcela?.grupo && x.parcela?.grupo === l.parcela.grupo)); return null;
     }
   }
@@ -472,9 +519,9 @@ function rotear(method, path, q, body) {
   }
 
   if (a === 'metas') {
-    if (!id && M === 'GET') return [...db.metas].sort((x, y) => x.arquivada - y.arquivada).map(metaComMetricas);
+    if (!id && M === 'GET') { gerarRecorrentes(); return [...db.metas].sort((x, y) => (x.arquivada - y.arquivada) || ((y.tipo === 'poupanca') - (x.tipo === 'poupanca'))).map(metaComMetricas); }
     if (!id && M === 'POST') {
-      const d = { _id: novoId(), icone: '🎯', cor: '#2952eb', moeda: 'EUR', prazo: null, pessoas: [], arquivada: false, ...limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas']), createdAt: agoraISO() };
+      const d = { _id: novoId(), icone: '🎯', cor: '#2952eb', moeda: 'EUR', prazo: null, pessoas: [], arquivada: false, ...limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas']), tipo: 'meta', ignoradas: [], mensal: mensalDe(body.mensal, null), createdAt: agoraISO() };
       d.prazo = paraData(d.prazo); d.valorAlvo = round2(d.valorAlvo);
       db.metas.push(d);
       if (Number(body.jaGuardado) > 0) db.contribuicoes.push({ _id: novoId(), meta: d._id, valor: round2(body.jaGuardado), data: agoraISO(), pessoa: '', nota: '' });
@@ -483,9 +530,11 @@ function rotear(method, path, q, body) {
     if (id && !sub && M === 'PUT') {
       const m = achar('metas', id); const d = limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas', 'arquivada']);
       if ('prazo' in d) d.prazo = paraData(d.prazo);
-      return metaComMetricas(Object.assign(m, d));
+      if (body.mensal !== undefined) d.mensal = mensalDe(body.mensal, m.mensal);
+      Object.assign(m, d); gerarRecorrentes();
+      return metaComMetricas(m);
     }
-    if (id && !sub && M === 'DELETE') { db.contribuicoes = db.contribuicoes.filter((c) => c.meta !== id); db.metas = db.metas.filter((m) => m._id !== id); return null; }
+    if (id && !sub && M === 'DELETE') { for (const l of db.lancamentos) if (l.meta === id) l.meta = null; db.contribuicoes = db.contribuicoes.filter((c) => c.meta !== id); db.metas = db.metas.filter((m) => m._id !== id); return null; }
     if (sub === 'contribuicoes' && M === 'GET') return db.contribuicoes.filter((c) => c.meta === id).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
     if (sub === 'contribuicoes' && M === 'POST') {
       const m = achar('metas', id);
@@ -498,7 +547,12 @@ function rotear(method, path, q, body) {
     }
   }
   if (a === 'reservas-viagem' && M === 'DELETE') { db.reservasViagem = db.reservasViagem.filter((r) => r._id !== id); return null; }
-  if (a === 'contribuicoes' && M === 'DELETE') { db.contribuicoes = db.contribuicoes.filter((c) => c._id !== id); return null; }
+  if (a === 'contribuicoes' && M === 'DELETE') {
+    const c = db.contribuicoes.find((x) => x._id === id);
+    if (c?.automatica && c.competencia) { const m = db.metas.find((x) => x._id === c.meta); if (m) { m.ignoradas ||= []; if (!m.ignoradas.includes(c.competencia)) m.ignoradas.push(c.competencia); } }
+    if (c?.lancamento) { const l = db.lancamentos.find((x) => x._id === c.lancamento); if (l) l.meta = null; }
+    db.contribuicoes = db.contribuicoes.filter((x) => x._id !== id); return null;
+  }
 
   if (a === 'regras' && M === 'GET') return db.regras;
   if (a === 'importar' && id === 'previa') {

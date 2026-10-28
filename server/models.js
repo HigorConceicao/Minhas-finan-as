@@ -40,6 +40,8 @@ export const Lancamento = model(
       valorConta: { type: Number, default: null },
       // gasto pago com o dinheiro separado para a viagem (não mexe em nenhuma conta)
       reservaViagem: { type: Boolean, default: false },
+      // gasto pago com dinheiro guardado numa meta/poupança (gera a retirada ligada)
+      meta: { type: Schema.Types.ObjectId, ref: 'Meta', default: null },
       fatura: { type: String, default: null }, // pagamento de cartão: 'AAAA-MM' da fatura paga
       ajuste: { type: Boolean, default: false }, // correção de saldo: não conta como receita/despesa
       viagem: { type: Schema.Types.ObjectId, ref: 'Viagem', default: null, index: true },
@@ -121,6 +123,16 @@ export const Meta = model(
       prazo: { type: Date, default: null },
       pessoas: { type: [String], default: [] }, // quem participa (meta conjunta)
       arquivada: { type: Boolean, default: false },
+      // 'poupanca': dinheiro guardado sem valor-alvo, que se acumula mês a mês
+      tipo: { type: String, enum: ['meta', 'poupanca'], default: 'meta' },
+      // depósito automático todo mês (a partir de `desde`); meses apagados à mão ficam em `ignoradas`
+      mensal: {
+        valor: { type: Number, default: 0, min: 0 },
+        dia: { type: Number, default: 1, min: 1, max: 31 },
+        conta: { type: Schema.Types.ObjectId, ref: 'Conta', default: null },
+        desde: { type: Date, default: null },
+      },
+      ignoradas: { type: [String], default: [] },
     },
     opts
   )
@@ -136,6 +148,11 @@ export const ContribuicaoMeta = model(
       // de qual conta saiu (ou para qual voltou, na retirada); sem conta, é só um registro
       conta: { type: Schema.Types.ObjectId, ref: 'Conta', default: null, index: true },
       valorConta: { type: Number, default: null }, // na moeda da conta, quando difere da meta
+      // retirada para pagar um gasto (o lançamento ligado)
+      lancamento: { type: Schema.Types.ObjectId, ref: 'Lancamento', default: null, index: true },
+      // depósito automático do mês `competencia`
+      automatica: { type: Boolean, default: false },
+      competencia: { type: String, default: null },
       pessoa: { type: String, default: '' },
       nota: { type: String, default: '' },
     },

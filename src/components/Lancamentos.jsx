@@ -106,7 +106,7 @@ export default function Lancamentos({ mes, setMes, categorias, novoSinal, aoCons
 /** Uma linha de lançamento (lista, extrato de conta, viagem) */
 export function ItemLancamento({ l, cat, aoAbrir, contaAtual }) {
   const t = useT();
-  const { contas } = useDados();
+  const { contas, metas } = useDados();
   const nomeConta = (id) => contas.find((c) => c._id === id)?.nome;
   const transf = l.tipo === 'transferencia';
   // numa conta específica, a transferência é entrada ou saída
@@ -120,6 +120,7 @@ export function ItemLancamento({ l, cat, aoAbrir, contaAtual }) {
   else if (transf) detalhes.push(`${nomeConta(l.conta) || '?'} → ${nomeConta(l.contaDestino) || '?'}`);
   else {
     detalhes.push(cat?.nome || t('comum.semCategoria'));
+    if (l.meta) detalhes.push(t('lanc.daMeta', { n: metas.find((m) => m._id === l.meta)?.nome || '…' }));
     if (l.reservaViagem) detalhes.push(t('lanc.daReserva'));
     else if (l.conta && !contaAtual && nomeConta(l.conta)) detalhes.push(nomeConta(l.conta));
   }
@@ -158,21 +159,23 @@ const RESERVA = '__reserva'; // "conta" = dinheiro separado da viagem
 export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, aoApagar }) {
   const t = useT();
   const avisar = useAviso();
-  const { contasAtivas, contas, viagensAtivas, viagens } = useDados();
+  const { contasAtivas, contas, viagensAtivas, viagens, metas, recarregar } = useDados();
   const novo = !item?._id;
   const [f, setF] = useState({});
+  const [saldoMes, setSaldoMes] = useState(null); // saldo do mês na moeda do lançamento
+  useEffect(() => { if (aberto) recarregar(); }, [aberto]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!aberto) return;
     const ultimaMoeda = (() => { try { return localStorage.getItem('mf2-moeda'); } catch { return null; } })();
     if (item?._id) {
       setF({ ...item, valor: paraCampo(item.valor), valorDestino: paraCampo(item.valorDestino), valorConta: paraCampo(item.valorConta), data: paraInput(item.data), categoria: item.categoria || '',
-        conta: item.reservaViagem ? RESERVA : item.conta || '', contaDestino: item.contaDestino || '', viagem: item.viagem || '', parcelas: '1' });
+        conta: item.reservaViagem ? RESERVA : item.conta || '', contaDestino: item.contaDestino || '', viagem: item.viagem || '', meta: item.meta || '', parcelas: '1' });
       return;
     }
     const conta = item?.conta ?? (contasAtivas.some((c) => c._id === ultimaConta.get()) ? ultimaConta.get() : '');
     const moedaConta = contas.find((c) => c._id === conta)?.moeda;
     setF({ tipo: 'despesa', descricao: '', valor: '', moeda: moedaConta || ultimaMoeda || 'EUR', data: hojeISO(), categoria: '', nota: '',
-      conta, contaDestino: '', valorDestino: '', valorConta: '', viagem: '', parcelas: '1', ...item });
+      conta, contaDestino: '', valorDestino: '', valorConta: '', viagem: '', meta: '', parcelas: '1', ...item });
   }, [aberto, item]); // eslint-disable-line react-hooks/exhaustive-deps
   // valor, moeda ou conta mudou: o valor cobrado na conta é recalculado
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value, ...(k === 'valor' || k === 'moeda' ? { valorConta: '' } : {}) }));
@@ -190,6 +193,25 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
   const outraMoeda = !transf && contaOrig && f.moeda && contaOrig.moeda !== f.moeda;
   const opcoesConta = (excluir) => [...contasAtivas, ...(f.conta && !contasAtivas.some((c) => c._id === f.conta) ? contas.filter((c) => c._id === f.conta) : [])]
     .filter((c) => c._id !== excluir);
+  // pagar com o saldo do mês ou com dinheiro guardado (poupança ou meta)
+  const mesDoGasto = String(f.data || '').slice(0, 7);
+  useEffect(() => {
+    if (!aberto || f.tipo !== 'despesa' || !/^\d{4}-\d{2}$/.test(mesDoGasto) || !f.moeda) return;
+    let vivo = true;
+    get(`/resumo?mes=${mesDoGasto}&base=${f.moeda}`).then((r) => { if (vivo) setSaldoMes(r.saldo); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [aberto, f.tipo, mesDoGasto, f.moeda]);
+  const parcelado = ehCartao && Number(f.parcelas) > 1;
+  const podePagarComGuardado = f.tipo === 'despesa' && !parcelado;
+  const opcoesMeta = metas.filter((m) => (!m.arquivada && m.guardado > 0) || m._id === f.meta);
+  const metaSel = metas.find((m) => m._id === f.meta);
+  const poupanca = metas.find((m) => m.tipo === 'poupanca' && !m.arquivada);
+  const valorNum = lerNumero(f.valor) || 0;
+  // ao editar um gasto do mesmo mês que já saía do saldo, ele não conta contra si mesmo
+  const jaNoSaldo = !novo && item?.tipo === 'despesa' && !item.meta && String(item.data).slice(0, 7) === mesDoGasto && item.moeda === f.moeda ? Number(item.valor) : 0;
+  const disponivel = saldoMes == null ? null : saldoMes + jaNoSaldo;
+  const faltaSaldo = podePagarComGuardado && !f.meta && disponivel != null && valorNum > 0 && valorNum > disponivel + 0.004;
+  const sobraNaMeta = metaSel && metaSel.moeda === f.moeda ? metaSel.guardado + (item?.meta === metaSel._id ? Number(item.valor) : 0) - valorNum : null;
   const opcoesViagem = [...viagensAtivas, ...(f.viagem && !viagensAtivas.some((v) => v._id === f.viagem) ? viagens.filter((v) => v._id === f.viagem) : [])];
 
   const salvar = async (e) => {
@@ -204,6 +226,7 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
       categoria: transf ? null : f.categoria || null, conta: f.conta === RESERVA ? null : f.conta || null, reservaViagem: !transf && usaReserva, contaDestino: transf ? f.contaDestino : null,
       valorDestino: moedasDiferentes ? lerNumero(f.valorDestino) || null : null, valorConta: outraMoeda ? lerNumero(f.valorConta) || null : null, viagem: transf ? null : f.viagem || null,
       ...(novo && ehCartao && Number(f.parcelas) > 1 ? { parcelas: Number(f.parcelas) } : {}),
+      meta: podePagarComGuardado ? f.meta || null : null,
     };
     try {
       novo ? await post('/lancamentos', corpo) : await put(`/lancamentos/${item._id}`, corpo);
@@ -228,6 +251,35 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
             ? <Campo rotulo={t('comum.moeda')}><span className="campo block bg-sutil text-texto-2">{contaOrig?.moeda || '—'}</span></Campo>
             : <Campo rotulo={t('comum.moeda')}><select id="lanc-moeda" className="campo" value={f.moeda} onChange={set('moeda')}>{MOEDAS.map((m) => <option key={m}>{m}</option>)}</select></Campo>}
         </div>
+
+        {podePagarComGuardado && (opcoesMeta.length > 0 || faltaSaldo) && (
+          <div className={`space-y-3 rounded-2xl p-4 ${faltaSaldo ? 'bg-aviso-suave' : 'bg-sutil'}`}>
+            {opcoesMeta.length > 0 && (
+              <Campo rotulo={t('lanc.pagarCom')}>
+                <select id="lanc-pagar" className="campo bg-cartao" value={f.meta || ''} onChange={(e) => setF((x) => ({ ...x, meta: e.target.value }))}>
+                  <option value="">{disponivel != null ? t('lanc.saldoDoMes', { v: dinheiro(disponivel, f.moeda) }) : t('lanc.saldoDoMesCurto')}</option>
+                  {opcoesMeta.map((m) => <option key={m._id} value={m._id}>{m.icone} {m.nome} · {dinheiro(m.guardado, m.moeda)}</option>)}
+                </select>
+              </Campo>
+            )}
+            {faltaSaldo && (
+              <div className="text-sm">
+                <p className="font-semibold text-aviso">{t('lanc.semSaldo', { v: dinheiro(Math.max(0, disponivel), f.moeda) })}</p>
+                {poupanca?.guardado > 0 && (
+                  <button type="button" className="btn-secundario mt-2 w-full bg-cartao" onClick={() => setF((x) => ({ ...x, meta: poupanca._id }))}>
+                    {poupanca.icone} {t('lanc.usarPoupanca', { n: poupanca.nome, v: dinheiro(poupanca.guardado, poupanca.moeda) })}
+                  </button>
+                )}
+              </div>
+            )}
+            {metaSel && sobraNaMeta != null && (
+              <p className={`flex justify-between gap-2 text-sm ${sobraNaMeta < 0 ? 'font-semibold text-neg' : 'text-texto-2'}`}>
+                <span>{t('lanc.ficaEm', { n: metaSel.nome })}</span><span className="num font-bold">{dinheiro(sobraNaMeta, metaSel.moeda)}</span>
+              </p>
+            )}
+            {metaSel && <p className="text-xs text-texto-3">{t('lanc.pagarComDica')}</p>}
+          </div>
+        )}
 
         {transf ? (
           <>

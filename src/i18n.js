@@ -596,6 +596,35 @@ Object.assign(pt.contas.grupos, { separado: 'Separado para metas e viagens' });
 Object.assign(de.contas.grupos, { separado: 'Für Sparziele und Reisen zurückgelegt' });
 Object.assign(en.contas.grupos, { separado: 'Set aside for goals and trips' });
 
+
+Object.assign(pt.metas, {
+  suasMetas: 'Metas', poupancaSub: 'Dinheiro guardado que se acumula todo mês', esteMes: 'Este mês: {v}', todoMes: 'Todo mês: {v} no dia {d}',
+  ativarMensal: 'Guardar automaticamente todo mês', automatico: 'Depósito automático', pagou: 'Pagou: {d}',
+  mensalTitulo: 'Guardar todo mês', mensalNenhum: 'Desligado', mensalDica: 'O valor entra sozinho no dia escolhido e sai do saldo do mês. Começa a partir de agora.',
+});
+Object.assign(de.metas, {
+  suasMetas: 'Sparziele', poupancaSub: 'Erspartes, das jeden Monat wächst', esteMes: 'Diesen Monat: {v}', todoMes: 'Monatlich: {v} am {d}.',
+  ativarMensal: 'Jeden Monat automatisch sparen', automatico: 'Automatische Einzahlung', pagou: 'Bezahlt: {d}',
+  mensalTitulo: 'Jeden Monat sparen', mensalNenhum: 'Aus', mensalDica: 'Der Betrag wird am gewählten Tag automatisch eingezahlt und vom Monatssaldo abgezogen. Gilt ab jetzt.',
+});
+Object.assign(en.metas, {
+  suasMetas: 'Goals', poupancaSub: 'Money set aside that grows every month', esteMes: 'This month: {v}', todoMes: 'Every month: {v} on day {d}',
+  ativarMensal: 'Save automatically every month', automatico: 'Automatic deposit', pagou: 'Paid: {d}',
+  mensalTitulo: 'Save every month', mensalNenhum: 'Off', mensalDica: 'The amount goes in automatically on the chosen day and comes off the month’s balance. Starts from now.',
+});
+Object.assign(pt.lanc, {
+  pagarCom: 'Pagar com', saldoDoMes: 'Saldo do mês · {v}', saldoDoMesCurto: 'Saldo do mês', semSaldo: 'O saldo do mês não cobre este gasto (disponível {v}).',
+  usarPoupanca: 'Pagar com {n} ({v})', ficaEm: 'Fica em {n}', pagarComDica: 'O valor sai do dinheiro guardado. O gasto conta no orçamento, mas não tira do saldo do mês.', daMeta: 'de {n}',
+});
+Object.assign(de.lanc, {
+  pagarCom: 'Bezahlen mit', saldoDoMes: 'Monatssaldo · {v}', saldoDoMesCurto: 'Monatssaldo', semSaldo: 'Der Monatssaldo reicht nicht für diese Ausgabe (verfügbar {v}).',
+  usarPoupanca: 'Mit {n} bezahlen ({v})', ficaEm: 'Danach in {n}', pagarComDica: 'Der Betrag kommt aus dem Ersparten. Die Ausgabe zählt im Budget, verringert aber nicht den Monatssaldo.', daMeta: 'aus {n}',
+});
+Object.assign(en.lanc, {
+  pagarCom: 'Pay with', saldoDoMes: 'Month’s balance · {v}', saldoDoMesCurto: 'Month’s balance', semSaldo: 'The month’s balance doesn’t cover this expense ({v} available).',
+  usarPoupanca: 'Pay with {n} ({v})', ficaEm: 'Left in {n}', pagarComDica: 'The amount comes out of your savings. The expense counts in the budget but doesn’t reduce the month’s balance.', daMeta: 'from {n}',
+});
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

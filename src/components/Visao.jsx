@@ -110,7 +110,16 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
             <button className="text-sm font-semibold text-marca" onClick={() => irPara('metas')}>{t('metas.verTodas')}</button>
           </div>
           <ul className="grid gap-4 sm:grid-cols-2">
-            {resumo.metas.slice(0, 4).map((m) => (
+            {resumo.metas.slice(0, 4).map((m) => m.tipo === 'poupanca' ? (
+              <li key={m._id} className="flex items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-lg" style={{ background: `${m.cor}1f` }}>{m.icone}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{m.nome}</p>
+                  <p className="text-xs text-texto-3">{t('metas.poupancaSub')}</p>
+                </div>
+                <span className="num shrink-0 text-sm font-bold">{dinheiro(m.guardado, m.moeda)}</span>
+              </li>
+            ) : (
               <li key={m._id} className="flex items-center gap-3">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-lg" style={{ background: `${m.cor}1f` }}>{m.icone}</span>
                 <div className="min-w-0 flex-1">
