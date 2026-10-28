@@ -14,6 +14,7 @@ import Contas from './components/Contas.jsx';
 import Viagens from './components/Viagens.jsx';
 import Relatorio from './components/Relatorio.jsx';
 import Mais from './components/Mais.jsx';
+import ApplePay from './components/ApplePay.jsx';
 import { ProvedorDados } from './dados.jsx';
 
 const DEMO = import.meta.env.MODE === 'demo';
@@ -26,7 +27,7 @@ const ABAS = [
   { id: 'mais', icone: 'grade' },
 ];
 // telas que ficam "dentro" de uma aba (a aba-mãe fica destacada e aparece o botão de voltar)
-const SUB = { rendimento: 'contas', recorrentes: 'mais', viagens: 'mais', relatorio: 'mais' };
+const SUB = { rendimento: 'contas', recorrentes: 'mais', viagens: 'mais', relatorio: 'mais', applepay: 'mais' };
 const ROTAS = new Set([...ABAS.map((a) => a.id), ...Object.keys(SUB)]);
 
 const lerPref = (k, padrao) => { try { return localStorage.getItem(k) || padrao; } catch { return padrao; } };
@@ -195,7 +196,7 @@ function Painel({ protegido, aoSair }) {
 
       {/* key={idioma}: ao trocar o idioma, as telas remontam com datas e moedas no novo formato */}
       <main className="px-4 py-4 sm:px-6" key={idioma}>
-        {aba === 'visao' && <Visao mes={mes} setMes={setMes} base={base} setBase={setBase} resumo={resumo} irPara={setAba} novoLancamento={novoLancamento} />}
+        {aba === 'visao' && <Visao mes={mes} setMes={setMes} base={base} setBase={setBase} resumo={resumo} irPara={setAba} novoLancamento={novoLancamento} categorias={categorias} aoMudar={carregarResumo} />}
         {aba === 'lancamentos' && <Lancamentos mes={mes} setMes={setMes} categorias={categorias} novoSinal={novoSinal} aoConsumirNovo={consumirNovo} />}
         {aba === 'orcamento' && <Orcamento mes={mes} setMes={setMes} base={base} resumo={resumo} categorias={categorias} recarregar={recarregarTudo} />}
         {SUB[aba] && (
@@ -209,6 +210,7 @@ function Painel({ protegido, aoSair }) {
         {aba === 'mais' && <Mais irPara={setAba} abrirAjustes={() => setAjustes(true)} />}
         {aba === 'recorrentes' && <Recorrentes categorias={categorias} />}
         {aba === 'viagens' && <Viagens categorias={categorias} />}
+        {aba === 'applepay' && <ApplePay />}
         {aba === 'relatorio' && <Relatorio base={base === 'USD' ? 'EUR' : base} setBase={setBase} />}
       </main>
 

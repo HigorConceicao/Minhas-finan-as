@@ -693,6 +693,78 @@ Object.assign(en.metas, { origem: {
     saldoVolta: 'Goes back to this month’s balance.', contaVolta: 'Goes back to the account and this month’s balance.', registroVolta: 'Only recorded. The month’s balance and accounts don’t change.' },
 } });
 
+
+pt.ap = {
+  titulo: 'Apple Pay automático', sub: 'Cada compra com Apple Pay vira um lançamento sozinha, já com a categoria.',
+  comeco: 'Funciona com a automação "Transação" do app Atalhos do iPhone (iOS 17 ou mais novo). O app cria uma chave só para isso; com ela, o Atalhos manda o valor e a loja de cada compra para cá.',
+  ativar: 'Ativar e criar a chave', ativo: 'Ativo: pronto para receber compras', endereco: 'Endereço (URL)', cabecalho: 'Cabeçalho Authorization',
+  mostrar: 'Mostrar', ocultar: 'Ocultar', copiar: 'Copiar', copiado: 'Copiado', copieManual: 'Não deu para copiar. Toque em Mostrar e copie à mão.',
+  chaveDica: 'Esta chave só serve para lançar compras. Se alguém a vir, gere uma nova lá embaixo.',
+  contaPadrao: 'Lançar na conta', contaPadraoDica: 'De qual conta saem as compras com Apple Pay.', cartoes: 'Cartões recebidos', usarPadrao: 'Conta padrão',
+  passos: 'Como criar a automação no iPhone',
+  passo1: 'Abra o app <b>Atalhos</b> → aba <b>Automação</b> → <b>+</b> (Nova automação).',
+  passo2: 'Escolha <b>Transação</b> (Wallet). Marque seus cartões, deixe <b>Ao tocar</b> e escolha <b>Executar imediatamente</b>. Toque em Avançar → <b>Novo atalho em branco</b>.',
+  passo3: 'Adicione a ação <b>Obter conteúdo do URL</b> e cole o <b>endereço</b> acima.',
+  passo4: 'Toque na seta da ação: <b>Método: POST</b>. Em <b>Cabeçalhos</b>, adicione <b>Authorization</b> com o valor copiado acima.',
+  passo5: 'Em <b>Corpo da solicitação: JSON</b>, adicione três campos de texto (tabela abaixo). Em cada valor, toque e escolha a variável <b>Entrada do Atalho</b> → o detalhe indicado.',
+  passo6: 'Opcional: adicione <b>Mostrar notificação</b> com o <b>Conteúdo do URL</b> para ver "3,20 EUR · Padaria → Restaurantes". Depois, pague algo com Apple Pay e confira aqui em Últimos recebidos.',
+  corpo: 'Corpo JSON', varValor: 'Entrada do Atalho → Quantia (Amount)', varComerciante: 'Entrada do Atalho → Comerciante (Merchant)', varCartao: 'Entrada do Atalho → Cartão ou Passe (Card or Pass)',
+  nota: 'Os nomes podem variar um pouco conforme o idioma do iPhone. Alguns bancos não informam o valor ao Apple Pay; nesse caso aparece um erro em Últimos recebidos.',
+  ultimos: 'Últimos recebidos', simular: 'Simular uma compra', nadaAinda: 'Nada recebido ainda.', erroValor: 'Valor não reconhecido', duplicado: 'repetida, ignorada',
+  exemploLoja: 'Padaria (teste)', recebido: 'Compra recebida', falhou: 'Não deu certo',
+  novaChave: 'Gerar nova chave', novaChaveConf: 'Gerar? O atalho atual para de funcionar.', desligar: 'Desligar', desligarConf: 'Desligar? O atalho para de funcionar.', salvo: 'Salvo',
+  conferirTitulo: 'Compras para conferir', conferirSub: 'Chegaram pelo Apple Pay. Ajuste a categoria se precisar.', tudoCerto: 'Tudo certo', confirmar: 'Está certo', chipConferir: 'conferir',
+};
+de.ap = {
+  titulo: 'Apple Pay automatisch', sub: 'Jeder Apple-Pay-Kauf wird automatisch gebucht, gleich mit Kategorie.',
+  comeco: 'Funktioniert mit der Automation „Transaktion“ der Kurzbefehle-App (iOS 17 oder neuer). Die App erzeugt einen eigenen Schlüssel; damit schickt Kurzbefehle Betrag und Händler jedes Kaufs hierher.',
+  ativar: 'Aktivieren und Schlüssel erzeugen', ativo: 'Aktiv: bereit für Käufe', endereco: 'Adresse (URL)', cabecalho: 'Header Authorization',
+  mostrar: 'Anzeigen', ocultar: 'Ausblenden', copiar: 'Kopieren', copiado: 'Kopiert', copieManual: 'Kopieren nicht möglich. Tippe auf Anzeigen und kopiere von Hand.',
+  chaveDica: 'Dieser Schlüssel kann nur Käufe buchen. Falls ihn jemand sieht, erzeuge unten einen neuen.',
+  contaPadrao: 'Buchen auf Konto', contaPadraoDica: 'Von welchem Konto Apple-Pay-Käufe abgehen.', cartoes: 'Empfangene Karten', usarPadrao: 'Standardkonto',
+  passos: 'So richtest du die Automation ein',
+  passo1: 'Öffne <b>Kurzbefehle</b> → Tab <b>Automation</b> → <b>+</b> (Neue Automation).',
+  passo2: 'Wähle <b>Transaktion</b> (Wallet). Markiere deine Karten, lass <b>Beim Antippen</b> und wähle <b>Sofort ausführen</b>. Weiter → <b>Neuer leerer Kurzbefehl</b>.',
+  passo3: 'Füge die Aktion <b>Inhalte von URL abrufen</b> hinzu und setze die <b>Adresse</b> von oben ein.',
+  passo4: 'Tippe auf den Pfeil der Aktion: <b>Methode: POST</b>. Unter <b>Header</b> füge <b>Authorization</b> mit dem kopierten Wert hinzu.',
+  passo5: 'Unter <b>Anfragetext: JSON</b> füge drei Textfelder hinzu (Tabelle unten). Wähle jeweils die Variable <b>Kurzbefehleingabe</b> → das angegebene Detail.',
+  passo6: 'Optional: <b>Mitteilung anzeigen</b> mit den <b>Inhalten von URL</b>, um „3,20 EUR · Bäckerei → Restaurants“ zu sehen. Dann mit Apple Pay bezahlen und hier unter Zuletzt empfangen prüfen.',
+  corpo: 'JSON-Text', varValor: 'Kurzbefehleingabe → Betrag (Amount)', varComerciante: 'Kurzbefehleingabe → Händler (Merchant)', varCartao: 'Kurzbefehleingabe → Karte oder Ticket (Card or Pass)',
+  nota: 'Die Bezeichnungen können je nach iPhone-Sprache leicht abweichen. Manche Banken melden den Betrag nicht an Apple Pay; dann erscheint unter Zuletzt empfangen ein Fehler.',
+  ultimos: 'Zuletzt empfangen', simular: 'Kauf simulieren', nadaAinda: 'Noch nichts empfangen.', erroValor: 'Betrag nicht erkannt', duplicado: 'doppelt, ignoriert',
+  exemploLoja: 'Bäckerei (Test)', recebido: 'Kauf empfangen', falhou: 'Hat nicht geklappt',
+  novaChave: 'Neuen Schlüssel erzeugen', novaChaveConf: 'Erzeugen? Der aktuelle Kurzbefehl funktioniert dann nicht mehr.', desligar: 'Ausschalten', desligarConf: 'Ausschalten? Der Kurzbefehl funktioniert dann nicht mehr.', salvo: 'Gespeichert',
+  conferirTitulo: 'Käufe prüfen', conferirSub: 'Kamen über Apple Pay. Passe die Kategorie bei Bedarf an.', tudoCerto: 'Alles richtig', confirmar: 'Stimmt', chipConferir: 'prüfen',
+};
+en.ap = {
+  titulo: 'Automatic Apple Pay', sub: 'Every Apple Pay purchase becomes a transaction on its own, already categorised.',
+  comeco: 'Works with the “Transaction” automation in the iPhone Shortcuts app (iOS 17 or newer). The app creates a key just for this; with it, Shortcuts sends the amount and merchant of each purchase here.',
+  ativar: 'Turn on and create the key', ativo: 'On: ready to receive purchases', endereco: 'Address (URL)', cabecalho: 'Authorization header',
+  mostrar: 'Show', ocultar: 'Hide', copiar: 'Copy', copiado: 'Copied', copieManual: 'Couldn’t copy. Tap Show and copy it by hand.',
+  chaveDica: 'This key can only add purchases. If someone sees it, create a new one below.',
+  contaPadrao: 'Add to account', contaPadraoDica: 'Which account Apple Pay purchases come from.', cartoes: 'Cards received', usarPadrao: 'Default account',
+  passos: 'How to set up the automation on iPhone',
+  passo1: 'Open <b>Shortcuts</b> → <b>Automation</b> tab → <b>+</b> (New Automation).',
+  passo2: 'Choose <b>Transaction</b> (Wallet). Pick your cards, keep <b>When I Tap</b> and choose <b>Run Immediately</b>. Next → <b>New Blank Shortcut</b>.',
+  passo3: 'Add the action <b>Get Contents of URL</b> and paste the <b>address</b> above.',
+  passo4: 'Tap the action’s arrow: <b>Method: POST</b>. Under <b>Headers</b>, add <b>Authorization</b> with the value copied above.',
+  passo5: 'Under <b>Request Body: JSON</b>, add three text fields (table below). For each value, pick the variable <b>Shortcut Input</b> → the detail shown.',
+  passo6: 'Optional: add <b>Show Notification</b> with <b>Contents of URL</b> to see “3.20 EUR · Bakery → Restaurants”. Then pay with Apple Pay and check under Last received.',
+  corpo: 'JSON body', varValor: 'Shortcut Input → Amount', varComerciante: 'Shortcut Input → Merchant', varCartao: 'Shortcut Input → Card or Pass',
+  nota: 'Names may vary slightly with the iPhone language. Some banks don’t pass the amount to Apple Pay; then an error shows under Last received.',
+  ultimos: 'Last received', simular: 'Simulate a purchase', nadaAinda: 'Nothing received yet.', erroValor: 'Amount not recognised', duplicado: 'repeated, ignored',
+  exemploLoja: 'Bakery (test)', recebido: 'Purchase received', falhou: 'Didn’t work',
+  novaChave: 'Create new key', novaChaveConf: 'Create? The current shortcut stops working.', desligar: 'Turn off', desligarConf: 'Turn off? The shortcut stops working.', salvo: 'Saved',
+  conferirTitulo: 'Purchases to check', conferirSub: 'Came in via Apple Pay. Adjust the category if needed.', tudoCerto: 'All good', confirmar: 'Looks right', chipConferir: 'check',
+};
+Object.assign(pt.mais, { applepay: 'Cada compra no iPhone vira lançamento sozinha' });
+Object.assign(de.mais, { applepay: 'Jeder iPhone-Kauf wird automatisch gebucht' });
+Object.assign(en.mais, { applepay: 'Every iPhone purchase is added automatically' });
+Object.assign(pt.abas, { applepay: 'Apple Pay' }); Object.assign(de.abas, { applepay: 'Apple Pay' }); Object.assign(en.abas, { applepay: 'Apple Pay' });
+Object.assign(pt.erro, { chave_atalho: 'Chave do atalho inválida.', valor_invalido: 'Valor não reconhecido.' });
+Object.assign(de.erro, { chave_atalho: 'Ungültiger Kurzbefehl-Schlüssel.', valor_invalido: 'Betrag nicht erkannt.' });
+Object.assign(en.erro, { chave_atalho: 'Invalid shortcut key.', valor_invalido: 'Amount not recognised.' });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

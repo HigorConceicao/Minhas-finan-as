@@ -13,6 +13,7 @@ export default function Mais({ irPara, abrirAjustes }) {
     { id: 'recorrentes', icone: 'recorrente', titulo: t('abas.recorrentes'), desc: t('mais.recorrentes'), acao: () => irPara('recorrentes') },
     { id: 'viagens', icone: 'aviao', titulo: t('abas.viagens'), desc: t('mais.viagens'), acao: () => irPara('viagens') },
     { id: 'relatorio', icone: 'grafico', titulo: t('abas.relatorio'), desc: t('mais.relatorio'), acao: () => irPara('relatorio') },
+    { id: 'applepay', icone: 'carteira', titulo: t('ap.titulo'), desc: t('mais.applepay'), acao: () => irPara('applepay') },
     { id: 'lembretes', icone: 'sino', titulo: t('mais.lembretes'), desc: t('mais.lembretesDesc'), acao: () => setLembretes(true) },
     { id: 'ajustes', icone: 'ajustes', titulo: t('ajustes.titulo'), desc: t('mais.ajustes'), acao: abrirAjustes },
   ];

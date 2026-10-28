@@ -5,6 +5,8 @@ import {
 import {
   saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes, sincronizarRegraSalario,
 } from '../../server/contas.js';
+import { lerTransacaoAtalho, categoriaDoComerciante, contaDoCartao } from '../../server/applepay.js';
+import { chaveRegra } from '../importacao.js';
 
 const TAXAS = { EUR: 1, BRL: 6.2, USD: 1.08 };
 const converter = (v, de, para) => (de === para ? v : (Number(v) / TAXAS[de]) * TAXAS[para]);
@@ -22,6 +24,7 @@ const paraData = (v) => {
 class Erro extends Error { constructor(status, msg, codigo = null, dados) { super(msg); this.status = status; this.codigo = codigo; this.dados = dados; } }
 
 const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [], metas: [], contribuicoes: [], regras: [], carteira: [], viagens: [], reservasViagem: [] };
+let atalho = {};
 
 // ---------- dados de exemplo ----------
 function semear() {
@@ -89,6 +92,15 @@ function semear() {
     if (f.restante > 0 && f.vencimento < hojeISO) add('lancamentos', { tipo: 'transferencia', descricao: 'Fatura Cartão Visa', valor: f.restante, moeda: 'EUR', data: f.vencimento, conta: giro._id, contaDestino: cartao._id, fatura: f.mes, categoria: null, nota: '' });
   }
   add('viagens', { nome: 'Lisboa', icone: '🚆', cor: '#0ea5a4', moeda: 'EUR', orcamento: 900, inicio: emDias(50), fim: emDias(55), arquivada: false });
+  // Apple Pay: automação ativa e duas compras de hoje para conferir
+  const agora = new Date();
+  const horaAtras = (h) => new Date(agora.getTime() - h * 3600000).toISOString();
+  atalho = { chave: 'demo-chave-atalho', conta: cartao._id, cartoes: { 'Visa DKB': null, 'Girocard': giro._id }, ultimos: [] };
+  for (const [d, cat, v, h, cartaoNome] of [['REWE City', 'Mercado', 23.4, 3, 'Visa DKB'], ['Kowalski Laden', null, 9.9, 1, 'Visa DKB']]) {
+    const conta = cartaoNome === 'Girocard' ? giro._id : cartao._id;
+    add('lancamentos', { tipo: 'despesa', descricao: d, valor: v, moeda: 'EUR', data: horaAtras(h), categoria: cat ? c(cat) : null, conta, origem: 'applepay', revisar: true, nota: '', recorrente: null, competencia: null });
+    atalho.ultimos.unshift({ quando: horaAtras(h), ok: true, descricao: d, valor: v, moeda: 'EUR', categoria: cat });
+  }
 
   // conta de rendimento: 350 mil desde 6 meses atrás, 0,85% a.m.
   const conta = add('contas', { nome: 'Reserva', instituicao: 'Banco', moeda: 'BRL', saldoInicial: 350000, dataInicio: dia(-6, 1), modo: 'mensal', taxa: 0.85, nota: '',
@@ -263,7 +275,7 @@ function resumo(q) {
   return {
     mes, base, cambio: { fonte: 'reserva', taxas: TAXAS },
     ...(() => { const metasMes = round2(guardadoNoMes(db.contribuicoes, db.metas, conv, mes) + separadoViagensNoMes(db.reservasViagem, db.viagens, db.lancamentos, conv, mes)); return { metasMes, saldo: round2(receitas - despesas - metasMes) }; })(),
-    receitas: round2(receitas), despesas: round2(despesas), quantidade: lancs.length,
+    receitas: round2(receitas), despesas: round2(despesas), quantidade: lancs.length, paraRevisar: db.lancamentos.filter((l) => l.revisar).length,
     orcamentos, semCategoria: round2(porCat.get('sem') || 0),
     totalOrcado: round2(orcamentos.reduce((s, o) => s + (o.limite || 0), 0)),
     gastoOrcado: round2(orcamentos.filter((o) => o.limite).reduce((s, o) => s + o.gasto, 0)),
@@ -415,6 +427,34 @@ function rotaViagens(M, id, body, sub) {
   throw new Erro(404, 'Rota não encontrada');
 }
 
+// ---------- Apple Pay (automação do Atalhos) ----------
+function rotaAtalho(M, id, body) {
+  if (id === 'lancamento' && M === 'POST') {
+    // na demonstração, a chave vem no corpo da simulação ou vale a da configuração
+    if (!atalho.chave) throw new Erro(401, 'Chave do atalho inválida', 'chave_atalho');
+    const tr = lerTransacaoAtalho(body || {});
+    const registrar = (item) => { atalho.ultimos = [{ quando: agoraISO(), ...item }, ...(atalho.ultimos || [])].slice(0, 10); };
+    if (tr.erro) { registrar({ ok: false, erro: tr.erro, recebido: JSON.stringify(body || {}).slice(0, 200) }); throw new Erro(400, 'Valor não reconhecido', 'valor_invalido'); }
+    atalho.cartoes ||= {};
+    if (tr.cartao && !(tr.cartao in atalho.cartoes)) atalho.cartoes[tr.cartao] = null;
+    const conta = db.carteira.find((c) => c._id === contaDoCartao(tr.cartao, atalho)) || null;
+    const descricao = tr.comerciante || tr.cartao || 'Apple Pay';
+    const moeda = tr.moeda || conta?.moeda || 'EUR';
+    const categoria = categoriaDoComerciante(descricao, { categorias: db.categorias, regras: db.regras, historico: db.lancamentos });
+    const l = definirValorConta({ _id: novoId(), tipo: tr.estorno ? 'receita' : 'despesa', descricao, valor: tr.valor, moeda, data: agoraISO(), categoria: tr.estorno ? null : categoria,
+      conta: conta?._id || null, origem: 'applepay', revisar: true, nota: '', recorrente: null, competencia: null, createdAt: agoraISO() });
+    db.lancamentos.push(l);
+    const cat = db.categorias.find((c) => c._id === categoria);
+    registrar({ ok: true, descricao, valor: tr.valor, moeda, categoria: cat?.nome || null });
+    return { ok: true, texto: `${tr.valor.toFixed(2)} ${moeda} · ${descricao}${cat ? ` → ${cat.nome}` : ''}` };
+  }
+  if (!id && M === 'GET') return { ativo: !!atalho.chave, chave: atalho.chave || null, conta: atalho.conta || null, cartoes: atalho.cartoes || {}, ultimos: atalho.ultimos || [] };
+  if (id === 'chave' && M === 'POST') { atalho.chave = `demo-${Math.random().toString(36).slice(2, 14)}`; return { chave: atalho.chave }; }
+  if (!id && M === 'PUT') { if (body.conta !== undefined) atalho.conta = body.conta || null; if (body.cartoes) atalho.cartoes = body.cartoes; return { ok: true }; }
+  if (!id && M === 'DELETE') { delete atalho.chave; return null; }
+  throw new Erro(404, 'Rota não encontrada');
+}
+
 // ---------- roteador ----------
 const CAMPOS = {
   categorias: ['nome', 'tipo', 'cor', 'icone', 'orcamentoMensal', 'moeda', 'alertaPct', 'dedutivel'],
@@ -447,6 +487,7 @@ function rotear(method, path, q, body) {
   const M = method;
 
   if (a === 'status') return { ok: true, protegido: false };
+  if (a === 'atalho') return rotaAtalho(M, id, body);
   if (a === 'login') return { token: 'aberto', protegido: false };
   if (a === 'cambio') return { taxas: TAXAS, fonte: 'reserva' };
   if (a === 'resumo') return resumo(q);
@@ -461,11 +502,12 @@ function rotear(method, path, q, body) {
     }
   }
 
+  if (a === 'lancamentos' && sub === 'conferir') { const l = achar('lancamentos', id); l.revisar = false; return { ok: true }; }
   if (a === 'lancamentos') {
     if (M === 'GET') {
       gerarRecorrentes();
-      const mes = q.get('mes'), conta = q.get('conta'), viagem = q.get('viagem'), cat = q.get('categoria');
-      return [...db.lancamentos, ...(conta ? separados().lancamentos : [])].filter((l) => (!mes || doMes(l.data, mes)) && (!conta || l.conta === conta || l.contaDestino === conta) && (!viagem || l.viagem === viagem) && (!cat || l.categoria === cat)).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
+      const mes = q.get('mes'), conta = q.get('conta'), viagem = q.get('viagem'), cat = q.get('categoria'), revisar = q.get('revisar') === '1';
+      return [...db.lancamentos, ...(conta ? separados().lancamentos : [])].filter((l) => (!revisar || l.revisar) && (!mes || doMes(l.data, mes)) && (!conta || l.conta === conta || l.contaDestino === conta) && (!viagem || l.viagem === viagem) && (!cat || l.categoria === cat)).sort((x, y) => (y.data > x.data ? 1 : y.data < x.data ? -1 : 0));
     }
     if (M === 'POST') {
       const dados = definirValorConta(normalizar(a, body));
@@ -478,6 +520,12 @@ function rotear(method, path, q, body) {
     }
     if (M === 'PUT') {
       const l = achar(a, id); const d = normalizar(a, body); const junto = definirValorConta({ ...l, ...d });
+      d.revisar = false;
+      if (l.origem === 'applepay' && d.categoria && d.categoria !== l.categoria) {
+        const texto = chaveRegra(d.descricao || l.descricao);
+        const ex = db.regras.find((r) => r.texto === texto);
+        if (ex) ex.categoria = d.categoria; else if (texto.length >= 3) db.regras.push({ _id: novoId(), texto, categoria: d.categoria });
+      }
       if (junto.tipo !== 'despesa') d.meta = null;
       validarRetirada({ ...junto, ...('meta' in d ? { meta: d.meta } : {}) });
       Object.assign(l, d, { valorConta: junto.valorConta }); sincronizarRetirada(l); gerarRecorrentes(); return l;

@@ -1,9 +1,11 @@
+import { useCallback, useEffect, useState } from 'react';
+import { get, post, put } from '../api.js';
 import { dataCurta, dinheiro, mesNaFrase, pct } from '../fmt.js';
 import { useT } from '../i18n.js';
 import { Barra, Carregando, IconeCategoria, SeletorMes } from './ui.jsx';
 import Icone from './Icones.jsx';
 
-export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novoLancamento }) {
+export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novoLancamento, categorias = [], aoMudar }) {
   const t = useT();
   if (!resumo) return <Carregando />;
   const atencao = resumo.orcamentos.filter((o) => o.estado === 'estourado' || o.estado === 'alerta');
@@ -46,6 +48,8 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
           <Icone nome="mais" className="h-4 w-4" forte /> {t('visao.novo').replace('+ ', '')}
         </button>
       </section>
+
+      {resumo.paraRevisar > 0 && <CartaoConferir categorias={categorias} aoMudar={aoMudar} />}
 
       {resumo.proximos?.length > 0 && <CartaoProximos itens={resumo.proximos} irPara={irPara} />}
 
@@ -254,6 +258,59 @@ function CartaoProximos({ itens, irPara }) {
                 </span>
                 <span className="num shrink-0 text-sm font-bold">{dinheiro(i.valor, i.moeda)}</span>
               </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** Compras que chegaram sozinhas (Apple Pay): confira a categoria com um toque */
+function CartaoConferir({ categorias, aoMudar }) {
+  const t = useT();
+  const [lista, setLista] = useState(null);
+  const carregar = useCallback(async () => setLista(await get('/lancamentos?revisar=1')), []);
+  useEffect(() => { carregar().catch(() => {}); }, [carregar]);
+  if (!lista?.length) return null;
+  const cats = categorias.filter((c) => c.tipo === 'despesa');
+  const depois = async () => { await carregar(); aoMudar?.(); };
+  return (
+    <section className="cartao overflow-hidden">
+      <div className="flex items-center gap-3 px-5 pb-3 pt-5">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-marca-suave text-marca"><Icone nome="carteira" className="h-5 w-5" /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base">{t('ap.conferirTitulo')}</h3>
+          <p className="text-xs text-texto-3">{t('ap.conferirSub')}</p>
+        </div>
+        {lista.length > 1 && (
+          <button className="shrink-0 text-sm font-semibold text-marca" onClick={async () => { await Promise.all(lista.map((l) => post(`/lancamentos/${l._id}/conferir`))); await depois(); }}>{t('ap.tudoCerto')}</button>
+        )}
+      </div>
+      <ul className="divide-y divide-linha border-t border-linha">
+        {lista.map((l) => {
+          const cat = categorias.find((c) => c._id === l.categoria);
+          return (
+            <li key={l._id} className="flex items-center gap-3 px-5 py-3">
+              <IconeCategoria cor={cat?.cor} icone={cat?.icone || '•'} tamanho="h-9 w-9 text-sm" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-sm font-semibold">{l.descricao}</span>
+                  <span className="num shrink-0 text-sm font-bold">{l.tipo === 'receita' ? '+' : '−'}{dinheiro(l.valor, l.moeda)}</span>
+                </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <select aria-label={t('comum.categoria')} className="campo min-w-0 flex-1 py-1.5 text-xs" value={l.categoria || ''}
+                    onChange={async (e) => { await put(`/lancamentos/${l._id}`, { categoria: e.target.value || null }); await depois(); }}>
+                    <option value="">{t('comum.semCategoria')}</option>
+                    {cats.map((c) => <option key={c._id} value={c._id}>{c.icone} {c.nome}</option>)}
+                  </select>
+                  <span className="shrink-0 text-[11px] text-texto-3">{dataCurta(l.data)}</span>
+                  <button className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-pos-suave text-pos" aria-label={t('ap.confirmar')}
+                    onClick={async () => { await post(`/lancamentos/${l._id}/conferir`); await depois(); }}>
+                    <Icone nome="check" className="h-4 w-4" forte />
+                  </button>
+                </div>
+              </div>
             </li>
           );
         })}

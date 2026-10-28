@@ -190,7 +190,7 @@ export function interpretarExtrato(texto, mapaManual = null) {
 // palavras-chave por nome de categoria padrão
 export const PALAVRAS = {
   Mercado: ['rewe', 'edeka', 'lidl', 'aldi', 'netto', 'penny', 'kaufland', 'norma', 'globus', 'tegut', 'dm-drogerie', 'dm drogerie', 'rossmann', 'muller handels', 'mueller handels', 'denns', 'alnatura', 'supermarkt', 'carrefour', 'pao de acucar'],
-  Restaurantes: ['lieferando', 'wolt', 'uber eats', 'mcdonald', 'burger king', 'starbucks', 'restaurant', 'ristorante', 'pizzeria', 'cafe', 'baeckerei', 'backerei', 'kebab', 'doner', 'sushi', 'kfc', 'subway', 'vapiano', 'ifood'],
+  Restaurantes: ['lieferando', 'wolt', 'uber eats', 'mcdonald', 'burger king', 'starbucks', 'restaurant', 'ristorante', 'pizzeria', 'cafe', 'baeckerei', 'backerei', 'padaria', 'bakery', 'kebab', 'doner', 'sushi', 'kfc', 'subway', 'vapiano', 'ifood'],
   Transporte: ['deutsche bahn', 'db vertrieb', 'db fernverkehr', 'bahn.de', 'flixbus', 'flixtrain', 'uber', 'bolt', 'tier', 'lime', 'bvg', 'mvv', 'hvv', 'vvs', 'tankstelle', 'aral', 'shell', 'esso', 'deutschlandticket', 'stadtbus', 'sbb'],
   Assinaturas: ['spotify', 'netflix', 'disney', 'amazon prime', 'prime video', 'apple.com', 'icloud', 'youtube', 'google storage', 'google one', 'openai', 'chatgpt', 'anthropic', 'claude.ai', 'adobe', 'microsoft', 'vodafone', 'telekom', 'o2 ', 'congstar', 'dazn', 'audible'],
   Moradia: ['miete', 'vermieter', 'nebenkosten', 'hausverwaltung', 'wohnung', 'strom', 'stadtwerke', 'rundfunk', 'beitragsservice', 'ikea', 'gas '],

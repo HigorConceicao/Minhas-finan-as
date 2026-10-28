@@ -141,6 +141,7 @@ export function ItemLancamento({ l, cat, aoAbrir, contaAtual }) {
         <span className="flex items-center gap-1 truncate text-xs text-texto-3">
           {detalhes.join(' · ')}
           {l.recorrente && <><span aria-hidden>·</span><Icone nome="recorrente" className="h-3 w-3 shrink-0" />{t('lanc.recorrente')}</>}
+          {l.origem === 'applepay' && <span className={`chip ml-1 shrink-0 px-1.5 py-0 text-[10px] ${l.revisar ? 'bg-aviso-suave text-aviso' : 'bg-sutil text-texto-2'}`}>{l.revisar ? t('ap.chipConferir') : 'Apple Pay'}</span>}
         </span>
       </span>
       <span className={`num shrink-0 text-sm font-bold ${transf && !contaAtual ? 'text-texto-2' : entrada ? 'text-pos' : ''}`}>

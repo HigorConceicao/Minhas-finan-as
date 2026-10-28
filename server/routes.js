@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import {
-  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem,
+  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem, Config,
 } from './models.js';
 import {
   saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes, sincronizarRegraSalario,
@@ -12,6 +12,8 @@ import {
   metricasConta, competenciasDevidas, diaNoMes, mesDe, round2, saldoAte, taxaMensal, ultimoDiaDoMes, rendimentosAutomaticos, metricasMeta, SAIDAS,
 } from './finance.js';
 import { obterTaxas, converter, conversorPorDia, taxasNaData } from './cambio.js';
+import { lerTransacaoAtalho, categoriaDoComerciante, contaDoCartao } from './applepay.js';
+import { chaveRegra } from '../src/importacao.js';
 
 const api = Router();
 
@@ -40,6 +42,44 @@ api.post('/login', (req, res) => {
 });
 
 api.get('/status', (_req, res) => res.json({ ok: true, protegido: Boolean(SENHA) }));
+
+// ---------- Apple Pay: a automação do Atalhos manda cada compra para cá (com a chave própria) ----------
+const lerConfigAtalho = async () => (await Config.findOne({ chave: 'atalho' }).lean())?.valor || {};
+const gravarConfigAtalho = (valor) => Config.updateOne({ chave: 'atalho' }, { $set: { valor } }, { upsert: true });
+api.post('/atalho/lancamento', wrap(async (req, res) => {
+  const cfg = await lerConfigAtalho();
+  const enviada = String(req.headers['x-chave'] || (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.body?.chave || '').trim();
+  const ok = cfg.chave && enviada.length === cfg.chave.length && crypto.timingSafeEqual(Buffer.from(enviada), Buffer.from(cfg.chave));
+  if (!ok) return erro(res, 401, 'Chave do atalho inválida', 'chave_atalho');
+  const tr = lerTransacaoAtalho(req.body || {});
+  const registrar = async (item) => { cfg.ultimos = [{ quando: new Date(), ...item }, ...(cfg.ultimos || [])].slice(0, 10); await gravarConfigAtalho(cfg); };
+  if (tr.erro) { await registrar({ ok: false, erro: tr.erro, recebido: JSON.stringify(req.body || {}).slice(0, 200) }); return erro(res, 400, 'Valor não reconhecido', 'valor_invalido'); }
+  // cartão novo: aparece nos Ajustes para você ligar a uma conta
+  cfg.cartoes = cfg.cartoes || {};
+  if (tr.cartao && !(tr.cartao in cfg.cartoes)) cfg.cartoes[tr.cartao] = null;
+  const contaId = contaDoCartao(tr.cartao, cfg);
+  const conta = contaId && validarId(contaId) ? await Conta.findById(contaId).lean() : null;
+  const descricao = tr.comerciante || tr.cartao || 'Apple Pay';
+  const moeda = tr.moeda || conta?.moeda || 'EUR';
+  // o Atalhos às vezes dispara duas vezes: ignora a mesma compra em até 3 minutos
+  const dup = await Lancamento.findOne({ origem: 'applepay', descricao, valor: tr.valor, data: { $gte: new Date(Date.now() - 180000) } }).lean();
+  if (dup) { await registrar({ ok: true, duplicado: true, descricao, valor: tr.valor, moeda }); return res.json({ ok: true, duplicado: true, texto: `${descricao}: já registrado` }); }
+  const [categorias, regras, historico] = await Promise.all([
+    Categoria.find().lean(), RegraCategoria.find().lean(),
+    Lancamento.find({ tipo: 'despesa', categoria: { $ne: null } }, 'descricao categoria data tipo').sort({ data: -1 }).limit(500).lean(),
+  ]);
+  const categoria = categoriaDoComerciante(descricao, { categorias, regras, historico });
+  const dados = {
+    tipo: tr.estorno ? 'receita' : 'despesa', descricao, valor: tr.valor, moeda, data: new Date(), categoria: tr.estorno ? null : categoria,
+    conta: conta?._id || null, origem: 'applepay', revisar: true, nota: tr.moedaOutra ? `${tr.valorTexto} (${tr.moedaOutra})` : '',
+  };
+  await definirValorConta([dados]);
+  const l = await Lancamento.create(dados);
+  const cat = categorias.find((c) => String(c._id) === String(categoria));
+  await registrar({ ok: true, descricao, valor: tr.valor, moeda, categoria: cat?.nome || null, lancamento: l._id });
+  // texto curto que o Atalhos pode mostrar numa notificação
+  res.status(201).json({ ok: true, texto: `${tr.valor.toFixed(2)} ${moeda} · ${descricao}${cat ? ` → ${cat.nome}` : ''}` });
+}));
 
 api.use((req, res, next) => {
   if (!SENHA) return next();
@@ -235,6 +275,7 @@ api.get('/lancamentos', wrap(async (req, res) => {
   if (req.query.categoria && validarId(req.query.categoria)) filtro.categoria = req.query.categoria;
   if (req.query.conta && validarId(req.query.conta)) filtro.$or = [{ conta: req.query.conta }, { contaDestino: req.query.conta }];
   if (req.query.viagem && validarId(req.query.viagem)) filtro.viagem = req.query.viagem;
+  if (req.query.revisar === '1') filtro.revisar = true;
   const lista = await Lancamento.find(filtro).sort({ data: -1, createdAt: -1 }).limit(2000).lean();
   if (filtro.$or) {
     // na conta, também o que foi separado para metas e viagens
@@ -275,11 +316,49 @@ api.put('/lancamentos/:id', wrap(async (req, res) => {
   const antes = await Lancamento.findById(req.params.id).lean();
   if (!antes) return erro(res, 404, 'Lançamento não encontrado');
   await validarRetirada({ ...antes, ...dados });
+  dados.revisar = false; // editado = conferido
+  // corrigiu a categoria de uma compra do Apple Pay: aprende para a próxima vez
+  if (antes.origem === 'applepay' && dados.categoria && String(dados.categoria) !== String(antes.categoria)) {
+    const texto = chaveRegra(dados.descricao || antes.descricao);
+    if (texto.length >= 3) await RegraCategoria.updateOne({ texto }, { $set: { categoria: dados.categoria } }, { upsert: true });
+  }
   const l = await Lancamento.findByIdAndUpdate(req.params.id, dados, { new: true, runValidators: true });
   await sincronizarRetirada(l.toObject());
   if (l.tipo === 'receita' || antes.tipo === 'receita') await gerarDepositosAutomaticos();
   res.json(l);
 }));
+api.post('/lancamentos/:id/conferir', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  await Lancamento.updateOne({ _id: req.params.id }, { revisar: false });
+  res.json({ ok: true });
+}));
+// configuração do Apple Pay (só com a senha do app)
+api.get('/atalho', wrap(async (_req, res) => {
+  const cfg = await lerConfigAtalho();
+  res.json({ ativo: !!cfg.chave, chave: cfg.chave || null, conta: cfg.conta || null, cartoes: cfg.cartoes || {}, ultimos: cfg.ultimos || [] });
+}));
+api.post('/atalho/chave', wrap(async (_req, res) => {
+  const cfg = await lerConfigAtalho();
+  cfg.chave = crypto.randomBytes(18).toString('base64url'); // trocar a chave desliga o atalho antigo
+  await gravarConfigAtalho(cfg);
+  res.json({ chave: cfg.chave });
+}));
+api.put('/atalho', wrap(async (req, res) => {
+  const cfg = await lerConfigAtalho();
+  if (req.body?.conta !== undefined) cfg.conta = validarId(req.body.conta) ? req.body.conta : null;
+  if (req.body?.cartoes && typeof req.body.cartoes === 'object') {
+    cfg.cartoes = Object.fromEntries(Object.entries(req.body.cartoes).slice(0, 30).map(([k, v]) => [String(k).slice(0, 80), validarId(v) ? v : null]));
+  }
+  await gravarConfigAtalho(cfg);
+  res.json({ ok: true });
+}));
+api.delete('/atalho', wrap(async (_req, res) => {
+  const cfg = await lerConfigAtalho();
+  delete cfg.chave;
+  await gravarConfigAtalho(cfg);
+  res.status(204).end();
+}));
+
 api.delete('/lancamentos/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const l = await Lancamento.findByIdAndDelete(req.params.id);
@@ -421,7 +500,7 @@ api.get('/resumo', wrap(async (req, res) => {
   res.json({
     mes, base, cambio: { fonte, data: dataCambio, taxas }, metas: metasResumo,
     patrimonio: { ativos: pat.ativos, passivos: pat.passivos, liquido: pat.liquido }, temContas: dadosCarteira.contas.length > 0, proximos,
-    receitas: round2(receitas), despesas: round2(despesas), metasMes, saldo: round2(receitas - despesas - metasMes),
+    receitas: round2(receitas), despesas: round2(despesas), metasMes, paraRevisar: await Lancamento.countDocuments({ revisar: true }), saldo: round2(receitas - despesas - metasMes),
     quantidade: lancs.length,
     orcamentos, semCategoria, totalOrcado, gastoOrcado, fracaoDoMes: round2(fracao),
     contas: contasResumo,

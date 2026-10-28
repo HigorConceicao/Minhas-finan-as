@@ -40,6 +40,9 @@ export const Lancamento = model(
       valorConta: { type: Number, default: null },
       // gasto pago com o dinheiro separado para a viagem (não mexe em nenhuma conta)
       reservaViagem: { type: Boolean, default: false },
+      // de onde veio: 'applepay' (automação do Atalhos); `revisar` = ainda não conferido
+      origem: { type: String, default: null },
+      revisar: { type: Boolean, default: false },
       // gasto pago com dinheiro guardado numa meta/poupança (gera a retirada ligada)
       meta: { type: Schema.Types.ObjectId, ref: 'Meta', default: null },
       fatura: { type: String, default: null }, // pagamento de cartão: 'AAAA-MM' da fatura paga
