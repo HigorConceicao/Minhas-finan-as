@@ -150,6 +150,8 @@ export const ContribuicaoMeta = model(
       valorConta: { type: Number, default: null }, // na moeda da conta, quando difere da meta
       // retirada para pagar um gasto (o lançamento ligado)
       lancamento: { type: Schema.Types.ObjectId, ref: 'Lancamento', default: null, index: true },
+      // retirada para separar dinheiro para uma viagem
+      reservaViagem: { type: Schema.Types.ObjectId, ref: 'ReservaViagem', default: null, index: true },
       // depósito automático do mês `competencia`
       automatica: { type: Boolean, default: false },
       competencia: { type: String, default: null },
@@ -166,8 +168,10 @@ export const ReservaViagem = model(
   new Schema(
     {
       viagem: { type: Schema.Types.ObjectId, ref: 'Viagem', required: true, index: true },
-      conta: { type: Schema.Types.ObjectId, ref: 'Conta', required: true, index: true },
-      valor: { type: Number, required: true }, // na moeda da conta
+      // de onde veio: uma conta (inclusive cartão), uma meta/poupança, ou nenhuma = saldo do mês
+      conta: { type: Schema.Types.ObjectId, ref: 'Conta', default: null, index: true },
+      meta: { type: Schema.Types.ObjectId, ref: 'Meta', default: null },
+      valor: { type: Number, required: true }, // na moeda da conta (sem conta: na moeda da viagem)
       valorViagem: { type: Number, default: null }, // na moeda da viagem, quando difere
       data: { type: Date, required: true },
       nota: { type: String, default: '' },

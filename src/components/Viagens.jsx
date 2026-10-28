@@ -6,7 +6,7 @@ import { useDados } from '../dados.jsx';
 import { Barra, BotaoConfirmar, Campo, Carregando, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
 import { FormLancamento, ItemLancamento } from './Lancamentos.jsx';
 import Icone from './Icones.jsx';
-import SeletorOrigem, { lembrarOrigem, origemInicial } from './Origem.jsx';
+import { TIPOS_ORIGEM } from './Origem.jsx';
 
 const ESTADO = { ok: 'bg-pos-suave text-pos', alerta: 'bg-aviso-suave text-aviso', estourado: 'bg-neg-suave text-neg', 'sem-orcamento': 'bg-sutil text-texto-2' };
 const ICONES = ['✈️', '🏖️', '🏔️', '🚆', '🚗', '🗽', '🏝️', '🎒', '⛺', '🇧🇷', '🇩🇪', '🇮🇹'];
@@ -101,7 +101,10 @@ function DetalheViagem({ id, categorias, aoFechar, aoEditar, aoMudar }) {
   const [form, setForm] = useState(null);
   const [reserva, setReserva] = useState(null); // 'separar' | 'devolver'
   const { contas, recarregar } = useDados();
+  const { metas } = useDados();
   const nomeConta = (cid) => contas.find((c) => c._id === cid)?.nome || '—';
+  // de onde veio o dinheiro: meta/poupança, conta (inclusive cartão) ou saldo do mês
+  const nomeOrigem = (r) => (r.meta ? metas.find((m) => m._id === r.meta)?.nome || '—' : r.conta ? nomeConta(r.conta) : t('lanc.saldoDoMesCurto'));
   const catMap = useMemo(() => new Map(categorias.map((c) => [c._id, c])), [categorias]);
   const carregar = useCallback(async () => { if (id) setV(await get(`/viagens/${id}`)); }, [id]);
   useEffect(() => { setV(null); carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar]);
@@ -146,8 +149,8 @@ function DetalheViagem({ id, categorias, aoFechar, aoEditar, aoMudar }) {
                   {v.reservas.map((r) => (
                     <li key={r._id} className="flex items-center gap-2 py-2">
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate font-semibold">{r.valor < 0 ? t('viag.devolvidoPara', { n: nomeConta(r.conta) }) : t('viag.separadoDe', { n: nomeConta(r.conta) })}</span>
-                        <span className="block text-xs text-texto-3">{dataCurta(r.data)}{r.valorViagem != null && <> · {dinheiro(Math.abs(r.valor), contas.find((c) => c._id === r.conta)?.moeda || v.moeda)}</>}</span>
+                        <span className="block truncate font-semibold">{!r.meta && !r.conta ? t(r.valor < 0 ? 'viag.devolvidoSaldo' : 'viag.doSaldo') : r.valor < 0 ? t('viag.devolvidoPara', { n: nomeOrigem(r) }) : t('viag.separadoDe', { n: nomeOrigem(r) })}</span>
+                        <span className="block text-xs text-texto-3">{dataCurta(r.data)}{r.valorViagem != null && r.conta && !r.meta && <> · {dinheiro(Math.abs(r.valor), contas.find((c) => c._id === r.conta)?.moeda || v.moeda)}</>}</span>
                       </span>
                       <span className={`num font-bold ${r.valor < 0 ? 'text-neg' : 'text-pos'}`}>{r.valor < 0 ? '−' : '+'}{dinheiro(Math.abs(r.valorViagem ?? r.valor), v.moeda)}</span>
                       <BotaoConfirmar className="rounded-full p-2 text-texto-3 hover:bg-neg-suave hover:text-neg" rotulo={t('comum.apagar')} texto={t('comum.apagar')}
@@ -275,25 +278,46 @@ function FormViagem({ aberto, viagem, aoFechar, aoSalvar, aoApagar }) {
 function ModalReserva({ aberto, modo, viagem, aoFechar, aoSalvar }) {
   const t = useT();
   const avisar = useAviso();
-  const { contas } = useDados();
+  const { contasAtivas, metasAtivas, recarregar } = useDados();
   const [f, setF] = useState({});
   const [tipo, setTipo] = useState(modo);
+  useEffect(() => { if (aberto) recarregar(); }, [aberto]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [saldoMes, setSaldoMes] = useState(null);
+  const contas = contasAtivas.filter((c) => [...TIPOS_ORIGEM, 'cartao'].includes(c.tipo));
+  const metas = metasAtivas.filter((m) => m.guardado > 0 || modo === 'devolver');
   useEffect(() => {
     if (!aberto) return;
     setTipo(modo);
-    setF({ valor: modo === 'devolver' ? paraCampo(viagem.saldoReserva) : '', valorConta: '', data: hojeISO(), conta: origemInicial(contas, true), nota: '' });
+    let ultima = 'saldo';
+    try { ultima = localStorage.getItem('mf2-origem-viagem') || 'saldo'; } catch {}
+    const valida = ultima === 'saldo' || (ultima.startsWith('meta:') && metasAtivas.some((m) => `meta:${m._id}` === ultima)) || (ultima.startsWith('conta:') && contas.some((c) => `conta:${c._id}` === ultima));
+    setF({ valor: modo === 'devolver' ? paraCampo(viagem.saldoReserva) : '', valorConta: '', data: hojeISO(), origem: valida ? ultima : 'saldo', nota: '' });
+    get(`/resumo?mes=${hojeISO().slice(0, 7)}&base=${viagem.moeda}`).then((r) => setSaldoMes(r.saldo)).catch(() => {});
   }, [aberto]); // eslint-disable-line react-hooks/exhaustive-deps
   const devolver = tipo === 'devolver';
+  const [qual, id] = String(f.origem || 'saldo').split(':');
+  const conta = qual === 'conta' ? contas.find((c) => c._id === id) : null;
+  const meta = qual === 'meta' ? metasAtivas.find((m) => m._id === id) : null;
+  const v = lerNumero(f.valor) || 0;
+  const outraMoeda = conta && conta.moeda !== viagem.moeda;
+  // quanto fica na origem depois (só quando a moeda é a mesma da viagem, para não adivinhar câmbio)
+  const sinal = devolver ? 1 : -1;
+  const depois = qual === 'saldo' && saldoMes != null ? { nome: t('lanc.saldoDoMesCurto'), v: saldoMes + sinal * v, m: viagem.moeda }
+    : meta && meta.moeda === viagem.moeda ? { nome: meta.nome, v: meta.guardado + sinal * v, m: meta.moeda }
+    : conta && !outraMoeda ? { nome: conta.nome, v: conta.saldo + sinal * v, m: conta.moeda } : null;
+
   const salvar = async (e) => {
     e.preventDefault();
-    const v = lerNumero(f.valor);
     if (!(v > 0)) return avisar(t('lanc.informeValor'), 'erro');
-    if (!f.conta) return avisar(t('erro.escolha_origem'), 'erro');
     if (devolver && v > viagem.saldoReserva + 0.004) return avisar(t('viag.devolverMais', { v: dinheiro(viagem.saldoReserva, viagem.moeda) }), 'erro');
     const vc = lerNumero(f.valorConta);
     try {
-      await post(`/viagens/${viagem._id}/reservas`, { conta: f.conta, valor: devolver ? -v : v, valorConta: vc > 0 ? (devolver ? -vc : vc) : null, data: f.data, nota: f.nota });
-      lembrarOrigem(f.conta);
+      await post(`/viagens/${viagem._id}/reservas`, {
+        valor: devolver ? -v : v, data: f.data, nota: f.nota,
+        ...(conta ? { conta: conta._id, valorConta: outraMoeda && vc > 0 ? (devolver ? -vc : vc) : null } : {}),
+        ...(meta ? { meta: meta._id } : {}),
+      });
+      try { localStorage.setItem('mf2-origem-viagem', f.origem); } catch {}
       aoSalvar(t(devolver ? 'viag.devolvido' : 'viag.separadoOk'));
     } catch (err) { avisar(err.message, 'erro'); }
   };
@@ -308,9 +332,35 @@ function ModalReserva({ aberto, modo, viagem, aoFechar, aoSalvar }) {
           </Campo>
           <Campo rotulo={t('comum.data')}><input id="res-data" type="date" className="campo" value={f.data || ''} onChange={(e) => setF((x) => ({ ...x, data: e.target.value }))} /></Campo>
         </div>
-        <SeletorOrigem obrigatoria conta={f.conta} aoMudar={(id) => setF((x) => ({ ...x, conta: id }))} valor={f.valor} moeda={viagem.moeda}
-          valorConta={f.valorConta} aoMudarValorConta={(v) => setF((x) => ({ ...x, valorConta: v }))} volta={devolver}
-          dica={devolver ? t('viag.devolverDica') : t('viag.separarDica')} />
+        <div className="space-y-3 rounded-2xl bg-sutil p-4">
+          <Campo rotulo={devolver ? t('orig.paraOnde') : t('orig.deOnde')}>
+            <select id="res-origem" className="campo bg-cartao" value={f.origem || 'saldo'} onChange={(e) => setF((x) => ({ ...x, origem: e.target.value, valorConta: '' }))}>
+              <option value="saldo">{t('lanc.saldoDoMesCurto')}{saldoMes != null ? ` · ${dinheiro(saldoMes, viagem.moeda)}` : ''}</option>
+              {metas.length > 0 && (
+                <optgroup label={t('viag.grupoGuardado')}>
+                  {metas.map((m) => <option key={m._id} value={`meta:${m._id}`}>{m.icone} {m.nome} · {dinheiro(m.guardado, m.moeda)}</option>)}
+                </optgroup>
+              )}
+              {contas.length > 0 && (
+                <optgroup label={t('viag.grupoContas')}>
+                  {contas.map((c) => <option key={c._id} value={`conta:${c._id}`}>{c.tipo === 'cartao' ? '💳 ' : ''}{c.nome} · {dinheiro(c.saldo, c.moeda)}</option>)}
+                </optgroup>
+              )}
+            </select>
+          </Campo>
+          {outraMoeda && (
+            <Campo rotulo={devolver ? t('orig.voltaNaConta', { m: conta.moeda }) : t('orig.saiDaConta', { m: conta.moeda })}>
+              <input id="res-valor-conta" className="campo num bg-cartao" inputMode="decimal" value={f.valorConta ?? ''} onChange={(e) => setF((x) => ({ ...x, valorConta: e.target.value }))} placeholder={t('lanc.cambioDoDia')} />
+            </Campo>
+          )}
+          {depois && v > 0 && (
+            <p className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="text-texto-2">{t('viag.ficaEm', { n: depois.nome })}</span>
+              <span className={`num font-bold ${depois.v < 0 ? 'text-neg' : ''}`}>{dinheiro(depois.v, depois.m)}</span>
+            </p>
+          )}
+          <p className="text-xs text-texto-3">{t(`viag.origemDica.${devolver ? 'volta' : qual}`)}</p>
+        </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
           <button className="btn-primario">{devolver ? t('viag.devolver') : t('viag.separarCurto')}</button>

@@ -66,9 +66,10 @@ export function faturasCartao(cartao, lancamentos, hoje = new Date()) {
   const pagamentos = [];
   for (const l of lancamentos) {
     if (l.tipo === 'transferencia' && idDe(l.contaDestino) === id) { pagamentos.push(l); continue; }
-    if (l.tipo === 'transferencia' || idDe(l.conta) !== id) continue;
+    if (idDe(l.conta) !== id) continue;
     const f = garantir(faturaDaCompra(l.data, fech));
-    if (l.tipo === 'despesa') f.compras += valorNaConta(l); else f.estornos += valorNaConta(l);
+    // dinheiro tirado do cartão (ex.: separado para uma viagem) entra na fatura como compra
+    if (l.tipo === 'despesa' || l.tipo === 'transferencia') f.compras += l.tipo === 'transferencia' ? Number(l.valor) : valorNaConta(l); else f.estornos += valorNaConta(l);
     f.itens.push(l);
   }
   // saldo inicial do cartão (negativo = já devia algo) entra na fatura do mês de início
@@ -280,11 +281,21 @@ export function movimentosSeparados({ contribuicoes = [], metas = [], reservasVi
     if (!r.conta || !v) continue;
     sair('viagem', r, v, 'viagem', r.valorViagem ?? r.valor, v.moeda);
   }
-  // gastos pagos com o dinheiro separado diminuem a reserva
+  // gastos pagos com o dinheiro separado diminuem a reserva; no patrimônio só entra a parte que saiu
+  // de contas (o que veio do saldo do mês não estava em nenhuma conta cadastrada)
+  const proporcao = new Map();
+  for (const r of reservasViagem) {
+    const k = idDe(r.viagem), v = Number(r.valorViagem ?? r.valor);
+    const p = proporcao.get(k) || { conta: 0, total: 0 };
+    p.total += v; if (r.conta) p.conta += v;
+    proporcao.set(k, p);
+  }
   for (const l of gastosReserva) {
     const v = viagemDe.get(idDe(l.viagem));
-    if (!l.reservaViagem || !v) continue;
-    reservas.push({ chave: `viagem:${idDe(v)}`, ref: idDe(v), tipo: 'viagem', nome: v.nome, icone: v.icone, moeda: v.moeda, data: l.data, valor: (l.tipo === 'receita' ? 1 : -1) * Number(l.valorConta ?? l.valor) });
+    const p = proporcao.get(idDe(l.viagem));
+    if (!l.reservaViagem || !v || !p || p.total <= 0 || p.conta <= 0) continue;
+    const fator = Math.min(1, p.conta / p.total);
+    reservas.push({ chave: `viagem:${idDe(v)}`, ref: idDe(v), tipo: 'viagem', nome: v.nome, icone: v.icone, moeda: v.moeda, data: l.data, valor: (l.tipo === 'receita' ? 1 : -1) * Number(l.valorConta ?? l.valor) * fator });
   }
   return { lancamentos, reservas };
 }
@@ -326,11 +337,27 @@ export function depositosAutomaticosDevidos(meta, existentes = [], hoje = new Da
   return out;
 }
 
-export function relatorioAnual({ ano, lancamentos, categorias, movsRend = [], contasRend = [], contribuicoes = [], metas = [], conv }) {
+/**
+ * Dinheiro separado para viagens num mês (moeda base): o que foi separado menos o que já foi gasto
+ * com ele. Separar tira do saldo do mês; gastar o separado não tira de novo.
+ */
+export function separadoViagensNoMes(reservas, viagens, gastosReserva, conv, mes) {
+  const moeda = new Map(viagens.map((v) => [idDe(v), v.moeda]));
+  let s = 0;
+  for (const r of reservas) if (mesDe(r.data) === mes && moeda.has(idDe(r.viagem))) s += conv(Number(r.valorViagem ?? r.valor), moeda.get(idDe(r.viagem)));
+  for (const l of gastosReserva) {
+    if (!l.reservaViagem || mesDe(l.data) !== mes || !moeda.has(idDe(l.viagem))) continue;
+    s -= (l.tipo === 'receita' ? -1 : 1) * conv(Number(l.valorConta ?? l.valor), moeda.get(idDe(l.viagem)));
+  }
+  return round2(s);
+}
+
+export function relatorioAnual({ ano, lancamentos, categorias, movsRend = [], contasRend = [], contribuicoes = [], metas = [], reservasViagem = [], viagens = [], conv }) {
   const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, '0')}`);
   const vazio = () => meses.map(() => 0);
   const entradas = vazio(), saidas = vazio(), rendimentos = vazio();
-  const guardado = meses.map((m) => guardadoNoMes(contribuicoes, metas, conv, m));
+  const gastosReserva = lancamentos.filter((l) => l.reservaViagem);
+  const guardado = meses.map((m) => round2(guardadoNoMes(contribuicoes, metas, conv, m) + separadoViagensNoMes(reservasViagem, viagens, gastosReserva, conv, m)));
   const porCat = new Map();
   const catMap = new Map(categorias.map((c) => [idDe(c), c]));
   const dedutiveis = [];

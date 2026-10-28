@@ -5,7 +5,7 @@ import {
   Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem,
 } from './models.js';
 import {
-  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos,
+  saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes,
 } from './contas.js';
 import { chavePublica, inscrever, cancelarInscricao, enviarTeste } from './lembretes.js';
 import {
@@ -388,7 +388,9 @@ api.get('/resumo', wrap(async (req, res) => {
   await garantirPoupanca();
   const metasResumo = await resumoMetas();
   // depósitos em metas no mês saem do saldo do mês (retiradas voltam)
-  const metasMes = guardadoNoMes(await ContribuicaoMeta.find({ data: intervaloDoMes(mes) }).lean(), await Meta.find().lean(), conv, mes);
+  // e o dinheiro separado para viagens (menos o que já foi gasto com ele)
+  const metasMes = round2(guardadoNoMes(await ContribuicaoMeta.find({ data: intervaloDoMes(mes) }).lean(), await Meta.find().lean(), conv, mes)
+    + separadoViagensNoMes(await ReservaViagem.find({ data: intervaloDoMes(mes) }).lean(), await Viagem.find().lean(), lancs, conv, mes));
   const dadosCarteira = await carregarCarteira();
   const pat = patrimonio({ ...dadosCarteira, conv });
   const proximos = lembretes({
@@ -588,7 +590,8 @@ const camposContrib = ({ valor, data, pessoa, nota, conta, valorConta }) =>
   }).filter(([, v]) => v !== undefined));
 
 /** Conta de onde sai (ou para onde volta) dinheiro separado: só contas com dinheiro de verdade */
-const ORIGENS = ['corrente', 'dinheiro', 'investimento'];
+const ORIGENS_BASE = ['corrente', 'dinheiro', 'investimento'];
+const ORIGENS = ORIGENS_BASE;
 async function contaDeOrigem(id) {
   if (!id) return null;
   const c = await Conta.findById(id).lean();
@@ -639,6 +642,7 @@ api.delete('/contribuicoes/:id', wrap(async (req, res) => {
   // depósito automático apagado não volta; retirada de um gasto apagada: o gasto passa a sair do saldo do mês
   if (c?.automatica && c.competencia) await Meta.updateOne({ _id: c.meta }, { $addToSet: { ignoradas: c.competencia } });
   if (c?.lancamento) await Lancamento.updateOne({ _id: c.lancamento }, { meta: null });
+  if (c?.reservaViagem) await ReservaViagem.deleteOne({ _id: c.reservaViagem }); // desfaz a separação para a viagem
   res.status(204).end();
 }));
 
@@ -791,7 +795,8 @@ api.get('/carteira/:id/faturas', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const c = await Conta.findById(req.params.id).lean();
   if (!c || c.tipo !== 'cartao') return erro(res, 404, 'Cartão não encontrado');
-  const lancs = await Lancamento.find({ $or: [{ conta: c._id }, { contaDestino: c._id }] }).lean();
+  // inclui o que foi tirado do cartão para viagens
+  const lancs = [...await Lancamento.find({ $or: [{ conta: c._id }, { contaDestino: c._id }] }).lean(), ...(await separados()).lancamentos.filter((l) => String(l.conta) === String(c._id))];
   res.json({ cartao: c, ...resumoCartao(c, lancs), faturas: faturasCartao(c, lancs) });
 }));
 /** Paga uma fatura: transferência da conta escolhida para o cartão */
@@ -834,24 +839,52 @@ api.get('/viagens/:id', wrap(async (req, res) => {
   if (!viagens.length) return erro(res, 404, 'Viagem não encontrada');
   res.json({ ...viagens[0], lancamentos: lancs.sort((a, b) => new Date(b.data) - new Date(a.data)), reservas });
 }));
-/** Separa dinheiro de uma conta para a viagem (devolver = valor negativo, volta para a conta) */
+/**
+ * Separa dinheiro para a viagem (devolver = valor negativo). De onde vem:
+ * - nada escolhido: saldo do mês;  - `meta`: sai da poupança/meta (retirada ligada);
+ * - `conta`: sai de uma conta, inclusive do cartão de crédito (entra na fatura).
+ * `valor` é na moeda da viagem; `valorConta` (opcional) é o que sai da conta, se a moeda for outra.
+ */
+const ORIGENS_VIAGEM = [...ORIGENS_BASE, 'cartao'];
 api.post('/viagens/:id/reservas', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   const v = await Viagem.findById(req.params.id).lean();
   if (!v) return erro(res, 404, 'Viagem não encontrada');
-  const conta = await contaDeOrigem(validarId(req.body?.conta) ? req.body.conta : null);
-  if (!conta) return erro(res, 400, 'Escolha a conta', 'escolha_origem');
-  // valor na moeda da viagem; valorConta (opcional) é o que sai da conta, quando a moeda é outra
   const valor = round2(Number(req.body?.valor));
   if (!valor) return erro(res, 400, 'Informe um valor', 'dados_invalidos');
   const data = req.body?.data ? new Date(`${String(req.body.data).slice(0, 10)}T12:00:00Z`) : new Date();
-  const naConta = await valorNaMoedaDaConta(conta, valor, v.moeda, req.body?.valorConta, data);
+  const nota = String(req.body?.nota || '').slice(0, 200);
+  let conta = null, meta = null, vMeta = 0;
+  if (validarId(req.body?.meta)) {
+    meta = await Meta.findById(req.body.meta).lean();
+    if (!meta) return erro(res, 404, 'Meta não encontrada');
+    vMeta = v.moeda === meta.moeda ? valor : round2(converter(valor, v.moeda, meta.moeda, await taxasNaData(data.toISOString().slice(0, 10))));
+    const contribs = await ContribuicaoMeta.find({ meta: meta._id }).sort({ data: -1 }).lean();
+    const guardado = round2(contribs.reduce((s, c) => s + Number(c.valor), 0));
+    if (vMeta > guardado + 0.004) return erro(res, 400, 'Retirada maior que o guardado', 'retirada_maior_guardado', { saldo: guardado, moeda: meta.moeda });
+    // se o dinheiro da meta tinha saído de uma conta, ele passa por essa conta (para os saldos baterem)
+    const emConta = contribs.filter((c) => c.conta).reduce((s, c) => s + Number(c.valor), 0);
+    const ultima = contribs.find((c) => c.conta && c.valor > 0)?.conta;
+    if (ultima && (vMeta < 0 || emConta >= vMeta - 0.004)) conta = await Conta.findById(ultima).lean();
+  } else if (validarId(req.body?.conta)) {
+    conta = await Conta.findById(req.body.conta).lean();
+    if (!conta || !ORIGENS_VIAGEM.includes(conta.tipo)) return erro(res, 400, 'Conta inválida', 'conta_origem_invalida');
+  }
+  const naConta = conta ? await valorNaMoedaDaConta(conta, valor, v.moeda, meta ? null : req.body?.valorConta, data) : null;
   const [valorConta, valorViagem] = naConta == null ? [valor, null] : [naConta, valor];
-  res.status(201).json(await ReservaViagem.create({ viagem: v._id, conta: conta._id, valor: valorConta, valorViagem, data, nota: String(req.body?.nota || '').slice(0, 200) }));
+  const r = await ReservaViagem.create({ viagem: v._id, conta: conta?._id || null, meta: meta?._id || null, valor: valorConta, valorViagem, data, nota });
+  if (meta) {
+    await ContribuicaoMeta.create({
+      meta: meta._id, valor: -vMeta, data, conta: conta?._id || null, valorConta: conta ? await valorNaMoedaDaConta(conta, -vMeta, meta.moeda, null, data) : null,
+      nota: `${v.icone || '✈️'} ${v.nome}`, reservaViagem: r._id, pessoa: '',
+    });
+  }
+  res.status(201).json(r);
 }));
 api.delete('/reservas-viagem/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   await ReservaViagem.findByIdAndDelete(req.params.id);
+  await ContribuicaoMeta.deleteMany({ reservaViagem: req.params.id }); // o dinheiro volta para a meta
   res.status(204).end();
 }));
 api.post('/viagens', wrap(async (req, res) => res.status(201).json(await Viagem.create(camposViagem(req.body)))));
@@ -863,6 +896,8 @@ api.put('/viagens/:id', wrap(async (req, res) => {
 api.delete('/viagens/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
   await Lancamento.updateMany({ viagem: req.params.id }, { viagem: null, reservaViagem: false, valorConta: null });
+  const ids = (await ReservaViagem.find({ viagem: req.params.id }, '_id').lean()).map((r) => r._id);
+  await ContribuicaoMeta.deleteMany({ reservaViagem: { $in: ids } });
   await ReservaViagem.deleteMany({ viagem: req.params.id });
   await Viagem.findByIdAndDelete(req.params.id);
   res.status(204).end();
@@ -876,14 +911,14 @@ api.get('/relatorio', wrap(async (req, res) => {
   const { taxas } = await obterTaxas();
   const conv = (v, m) => converter(v, m, base, taxas);
   const intervalo = { $gte: new Date(Date.UTC(ano, 0, 1)), $lt: new Date(Date.UTC(ano + 1, 0, 1)) };
-  const [lancamentos, categorias, movsRend, contasRend, contribuicoes, metas, primeiro] = await Promise.all([
+  const [lancamentos, categorias, movsRend, contasRend, contribuicoes, metas, reservasViagem, viagens, primeiro] = await Promise.all([
     Lancamento.find({ data: intervalo }).lean(), Categoria.find().lean(), Movimento.find({ data: intervalo }).lean(), ContaRendimento.find().lean(),
-    ContribuicaoMeta.find({ data: intervalo }).lean(), Meta.find().lean(),
+    ContribuicaoMeta.find({ data: intervalo }).lean(), Meta.find().lean(), ReservaViagem.find({ data: intervalo }).lean(), Viagem.find().lean(),
     Lancamento.findOne().sort({ data: 1 }).lean(),
   ]);
   const anoAtual = new Date().getUTCFullYear();
   const desde = primeiro ? new Date(primeiro.data).getUTCFullYear() : anoAtual;
-  res.json({ base, anos: Array.from({ length: Math.max(1, anoAtual - desde + 1) }, (_, i) => anoAtual - i), ...relatorioAnual({ ano, lancamentos, categorias, movsRend, contasRend, contribuicoes, metas, conv }) });
+  res.json({ base, anos: Array.from({ length: Math.max(1, anoAtual - desde + 1) }, (_, i) => anoAtual - i), ...relatorioAnual({ ano, lancamentos, categorias, movsRend, contasRend, contribuicoes, metas, reservasViagem, viagens, conv }) });
 }));
 
 // ---------- lembretes no celular ----------

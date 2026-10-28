@@ -408,9 +408,9 @@ Object.assign(pt.lanc, { valorConta: 'Cobrado na conta ({m})', valorContaDica: '
 Object.assign(de.lanc, { valorConta: 'Belastet auf dem Konto ({m})', valorContaDica: 'Betrag in der Kontowährung. Leer: Tageskurs wird verwendet.', cambioDoDia: 'Tageskurs', transferencia: 'Umbuchung', conta: 'Konto', semConta: 'Ohne Konto', de: 'Von', para: 'Nach', valorRecebido: 'Angekommener Betrag ({m})', valorRecebidoDica: 'Die Konten haben unterschiedliche Währungen.', parcelas: 'Raten', parcelasDica: 'Teilt den Betrag in monatliche Raten auf der Karte.', viagem: 'Reise', semViagem: 'Keine', apagarParcelas: 'Alle Raten löschen', ajusteSaldo: 'Saldokorrektur', parcela: 'Rate {n}/{t}' });
 Object.assign(en.lanc, { valorConta: 'Charged to account ({m})', valorContaDica: 'Amount in the account’s currency. Empty: uses the day’s rate.', cambioDoDia: 'Day’s rate', transferencia: 'Transfer', conta: 'Account', semConta: 'No account', de: 'From', para: 'To', valorRecebido: 'Amount received ({m})', valorRecebidoDica: 'The accounts use different currencies.', parcelas: 'Instalments', parcelasDica: 'Splits the amount into monthly card instalments.', viagem: 'Trip', semViagem: 'None', apagarParcelas: 'Delete all instalments', ajusteSaldo: 'balance adjustment', parcela: 'instalment {n}/{t}' });
 
-Object.assign(pt.visao, { metasMes: 'Metas', atencaoSub: '{n} categorias perto ou acima do limite', atencaoSub1: '1 categoria perto ou acima do limite', excessoTotal: '{v} acima do previsto', deLimite: 'de {v}', sit: { acima: 'Acima', limite: 'No limite', perto: 'Perto do limite' }, verOrcamento: 'Ver orçamento',  patrimonio: 'Patrimônio líquido', tenho: 'Tenho', devo: 'Devo', proximos: 'Próximos 7 dias', nadaVence: 'Nada vence nos próximos 7 dias.', verContas: 'Ver contas →', vence: 'vence {d}', venceu: 'venceu {d}', fatura: 'Fatura {n}', configurarContas: 'Cadastre suas contas para ver o patrimônio total →' });
-Object.assign(de.visao, { metasMes: 'Sparziele', atencaoSub: '{n} Kategorien nahe am oder über dem Limit', atencaoSub1: '1 Kategorie nahe am oder über dem Limit', excessoTotal: '{v} über Plan', deLimite: 'von {v}', sit: { acima: 'Überschritten', limite: 'Am Limit', perto: 'Fast am Limit' }, verOrcamento: 'Zum Budget',  patrimonio: 'Nettovermögen', tenho: 'Vermögen', devo: 'Schulden', proximos: 'Nächste 7 Tage', nadaVence: 'In den nächsten 7 Tagen ist nichts fällig.', verContas: 'Zu den Konten →', vence: 'fällig {d}', venceu: 'fällig seit {d}', fatura: 'Abrechnung {n}', configurarContas: 'Lege deine Konten an, um dein Gesamtvermögen zu sehen →' });
-Object.assign(en.visao, { metasMes: 'Goals', atencaoSub: '{n} categories near or over limit', atencaoSub1: '1 category near or over limit', excessoTotal: '{v} over plan', deLimite: 'of {v}', sit: { acima: 'Over', limite: 'At limit', perto: 'Near limit' }, verOrcamento: 'See budget',  patrimonio: 'Net worth', tenho: 'Assets', devo: 'Debts', proximos: 'Next 7 days', nadaVence: 'Nothing due in the next 7 days.', verContas: 'See accounts →', vence: 'due {d}', venceu: 'overdue since {d}', fatura: '{n} statement', configurarContas: 'Add your accounts to see your total net worth →' });
+Object.assign(pt.visao, { metasMes: 'Guardado', atencaoSub: '{n} categorias perto ou acima do limite', atencaoSub1: '1 categoria perto ou acima do limite', excessoTotal: '{v} acima do previsto', deLimite: 'de {v}', sit: { acima: 'Acima', limite: 'No limite', perto: 'Perto do limite' }, verOrcamento: 'Ver orçamento',  patrimonio: 'Patrimônio líquido', tenho: 'Tenho', devo: 'Devo', proximos: 'Próximos 7 dias', nadaVence: 'Nada vence nos próximos 7 dias.', verContas: 'Ver contas →', vence: 'vence {d}', venceu: 'venceu {d}', fatura: 'Fatura {n}', configurarContas: 'Cadastre suas contas para ver o patrimônio total →' });
+Object.assign(de.visao, { metasMes: 'Zurückgelegt', atencaoSub: '{n} Kategorien nahe am oder über dem Limit', atencaoSub1: '1 Kategorie nahe am oder über dem Limit', excessoTotal: '{v} über Plan', deLimite: 'von {v}', sit: { acima: 'Überschritten', limite: 'Am Limit', perto: 'Fast am Limit' }, verOrcamento: 'Zum Budget',  patrimonio: 'Nettovermögen', tenho: 'Vermögen', devo: 'Schulden', proximos: 'Nächste 7 Tage', nadaVence: 'In den nächsten 7 Tagen ist nichts fällig.', verContas: 'Zu den Konten →', vence: 'fällig {d}', venceu: 'fällig seit {d}', fatura: 'Abrechnung {n}', configurarContas: 'Lege deine Konten an, um dein Gesamtvermögen zu sehen →' });
+Object.assign(en.visao, { metasMes: 'Set aside', atencaoSub: '{n} categories near or over limit', atencaoSub1: '1 category near or over limit', excessoTotal: '{v} over plan', deLimite: 'of {v}', sit: { acima: 'Over', limite: 'At limit', perto: 'Near limit' }, verOrcamento: 'See budget',  patrimonio: 'Net worth', tenho: 'Assets', devo: 'Debts', proximos: 'Next 7 days', nadaVence: 'Nothing due in the next 7 days.', verContas: 'See accounts →', vence: 'due {d}', venceu: 'overdue since {d}', fatura: '{n} statement', configurarContas: 'Add your accounts to see your total net worth →' });
 
 Object.assign(pt.orc, { dedutivel: 'Dedutível no imposto', dedutivelDica: 'Aparece no relatório anual, na parte de despesas dedutíveis.' });
 Object.assign(de.orc, { dedutivel: 'Steuerlich absetzbar', dedutivelDica: 'Erscheint im Jahresbericht bei den absetzbaren Ausgaben.' });
@@ -501,19 +501,19 @@ en.viag = {
   salva: 'Trip saved', apagada: 'Trip deleted', deNome: 'Give the trip a name', dias: '{n} days', adicionarGasto: 'Add expense',
 };
 
-pt.rel = { metas: 'Guardado em metas', metasNota: 'Sai do saldo: depósitos menos retiradas.',
+pt.rel = { metas: 'Guardado em metas e viagens', metasNota: 'Sai do saldo: depósitos menos retiradas.',
   titulo: 'Relatório anual', entradas: 'Entradas', saidas: 'Saídas', rendimentos: 'Rendimentos', saldo: 'Saldo', porMes: 'Mês a mês', despesasCat: 'Despesas por categoria',
   receitasCat: 'Receitas por categoria', total: 'Total', media: 'Média/mês', dedutiveis: 'Despesas dedutíveis', dedutiveisDica: 'Categorias marcadas como “dedutível no imposto” em Orçamento. Útil para a Steuererklärung.',
   semDedutiveis: 'Nenhuma despesa dedutível neste ano. Marque as categorias em Orçamento → categoria → “Dedutível no imposto”.', exportar: 'Exportar CSV', exportarDed: 'Exportar dedutíveis',
   semDados: 'Nenhum lançamento neste ano.', rendimentosNota: 'Juros das contas de rendimento, já incluídos no patrimônio.', moeda: 'Valores em {m}',
 };
-de.rel = { metas: 'In Sparziele', metasNota: 'Wird vom Saldo abgezogen: Einzahlungen minus Entnahmen.',
+de.rel = { metas: 'Für Sparziele und Reisen', metasNota: 'Wird vom Saldo abgezogen: Einzahlungen minus Entnahmen.',
   titulo: 'Jahresbericht', entradas: 'Einnahmen', saidas: 'Ausgaben', rendimentos: 'Zinsen', saldo: 'Saldo', porMes: 'Monat für Monat', despesasCat: 'Ausgaben nach Kategorie',
   receitasCat: 'Einnahmen nach Kategorie', total: 'Gesamt', media: 'Ø/Monat', dedutiveis: 'Absetzbare Ausgaben', dedutiveisDica: 'Kategorien, die im Budget als „steuerlich absetzbar“ markiert sind. Praktisch für die Steuererklärung.',
   semDedutiveis: 'Keine absetzbaren Ausgaben in diesem Jahr. Markiere Kategorien unter Budget → Kategorie → „Steuerlich absetzbar“.', exportar: 'CSV exportieren', exportarDed: 'Absetzbares exportieren',
   semDados: 'Keine Buchungen in diesem Jahr.', rendimentosNota: 'Zinsen der Zinskonten, bereits im Vermögen enthalten.', moeda: 'Beträge in {m}',
 };
-en.rel = { metas: 'Saved to goals', metasNota: 'Taken off the balance: deposits minus withdrawals.',
+en.rel = { metas: 'Set aside for goals and trips', metasNota: 'Taken off the balance: deposits minus withdrawals.',
   titulo: 'Annual report', entradas: 'Income', saidas: 'Expenses', rendimentos: 'Interest', saldo: 'Balance', porMes: 'Month by month', despesasCat: 'Expenses by category',
   receitasCat: 'Income by category', total: 'Total', media: 'Avg/month', dedutiveis: 'Deductible expenses', dedutiveisDica: 'Categories marked “tax-deductible” under Budget. Handy for your tax return.',
   semDedutiveis: 'No deductible expenses this year. Mark categories under Budget → category → “Tax-deductible”.', exportar: 'Export CSV', exportarDed: 'Export deductibles',
@@ -572,22 +572,22 @@ Object.assign(pt.lanc, { daReserva: 'dinheiro separado', dinheiroSeparado: 'Dinh
 Object.assign(de.lanc, { daReserva: 'Reisegeld', dinheiroSeparado: 'Reisegeld ({v})', sep: { meta: 'Ins Sparziel', metaVolta: 'Aus dem Sparziel', viagem: 'Für die Reise zurückgelegt', viagemVolta: 'Von der Reise zurück' } });
 Object.assign(en.lanc, { daReserva: 'trip money', dinheiroSeparado: 'Trip money ({v})', sep: { meta: 'Saved into goal', metaVolta: 'Taken from goal', viagem: 'Set aside for trip', viagemVolta: 'Returned from trip' } });
 Object.assign(pt.viag, {
-  separado: 'Dinheiro separado', separadoDica: 'Tire um valor da conta para gastar na viagem. Os gastos pagos com ele saem daqui, sem mexer na conta de novo.',
-  separar: 'Separar dinheiro de uma conta', separarMais: 'Separar mais', separarCurto: 'Separar', devolver: 'Devolver sobra', separadoResumo: 'Separado {s} · gasto com ele {g}',
+  separado: 'Dinheiro separado', separadoDica: 'Reserve um valor para gastar na viagem: do saldo do mês, da poupança ou de uma conta ou cartão. Os gastos pagos com ele saem daqui.',
+  separar: 'Separar dinheiro para a viagem', separarMais: 'Separar mais', separarCurto: 'Separar', devolver: 'Devolver sobra', separadoResumo: 'Separado {s} · gasto com ele {g}',
   separadoDe: 'Separado de {n}', devolvidoPara: 'Devolvido para {n}', separarTitulo: 'Separar para “{n}”', devolverTitulo: 'Devolver para a conta',
   separarDica: 'O valor sai do saldo da conta e fica reservado para a viagem.', devolverDica: 'O que sobrou volta para o saldo da conta.',
   sobra: 'Sobra {v}', devolverMais: 'Só há {v} separado.', devolvido: 'Valor devolvido à conta', separadoOk: 'Dinheiro separado', reservaApagada: 'Movimento apagado',
 });
 Object.assign(de.viag, {
-  separado: 'Reisegeld', separadoDica: 'Nimm einen Betrag vom Konto für die Reise. Ausgaben damit werden hier abgezogen, ohne das Konto erneut zu belasten.',
-  separar: 'Geld von einem Konto zurücklegen', separarMais: 'Mehr zurücklegen', separarCurto: 'Zurücklegen', devolver: 'Rest zurückbuchen', separadoResumo: 'Zurückgelegt {s} · davon ausgegeben {g}',
+  separado: 'Reisegeld', separadoDica: 'Leg einen Betrag für die Reise zurück: aus dem Monatssaldo, dem Ersparten oder von einem Konto oder einer Karte. Ausgaben damit werden hier abgezogen.',
+  separar: 'Geld für die Reise zurücklegen', separarMais: 'Mehr zurücklegen', separarCurto: 'Zurücklegen', devolver: 'Rest zurückbuchen', separadoResumo: 'Zurückgelegt {s} · davon ausgegeben {g}',
   separadoDe: 'Von {n}', devolvidoPara: 'Zurück auf {n}', separarTitulo: 'Für „{n}“ zurücklegen', devolverTitulo: 'Aufs Konto zurückbuchen',
   separarDica: 'Der Betrag geht vom Kontosaldo ab und ist für die Reise reserviert.', devolverDica: 'Der Rest geht zurück auf das Konto.',
   sobra: 'Noch {v}', devolverMais: 'Es sind nur {v} zurückgelegt.', devolvido: 'Zurückgebucht', separadoOk: 'Geld zurückgelegt', reservaApagada: 'Gelöscht',
 });
 Object.assign(en.viag, {
-  separado: 'Trip money', separadoDica: 'Take an amount from an account to spend on the trip. Expenses paid with it come out of here, without touching the account again.',
-  separar: 'Set money aside from an account', separarMais: 'Set aside more', separarCurto: 'Set aside', devolver: 'Return what’s left', separadoResumo: 'Set aside {s} · spent from it {g}',
+  separado: 'Trip money', separadoDica: 'Set an amount aside to spend on the trip: from the month’s balance, your savings, or an account or card. Expenses paid with it come out of here.',
+  separar: 'Set money aside for the trip', separarMais: 'Set aside more', separarCurto: 'Set aside', devolver: 'Return what’s left', separadoResumo: 'Set aside {s} · spent from it {g}',
   separadoDe: 'From {n}', devolvidoPara: 'Back to {n}', separarTitulo: 'Set aside for “{n}”', devolverTitulo: 'Return to account',
   separarDica: 'The amount leaves the account balance and is reserved for the trip.', devolverDica: 'What’s left goes back to the account balance.',
   sobra: '{v} left', devolverMais: 'Only {v} is set aside.', devolvido: 'Returned to account', separadoOk: 'Money set aside', reservaApagada: 'Deleted',
@@ -624,6 +624,16 @@ Object.assign(en.lanc, {
   pagarCom: 'Pay with', saldoDoMes: 'Month’s balance · {v}', saldoDoMesCurto: 'Month’s balance', semSaldo: 'The month’s balance doesn’t cover this expense ({v} available).',
   usarPoupanca: 'Pay with {n} ({v})', ficaEm: 'Left in {n}', pagarComDica: 'The amount comes out of your savings. The expense counts in the budget but doesn’t reduce the month’s balance.', daMeta: 'from {n}',
 });
+
+Object.assign(pt.viag, { doSaldo: 'Do saldo do mês', devolvidoSaldo: 'Devolvido ao saldo do mês', grupoGuardado: 'Dinheiro guardado', grupoContas: 'Contas e cartões', ficaEm: 'Fica em {n}',
+  origemDica: { saldo: 'Sai do saldo deste mês. Os gastos pagos com este dinheiro não tiram do saldo de novo.', meta: 'Sai do dinheiro guardado; o saldo do mês não muda.',
+    conta: 'Sai do saldo da conta (no cartão, entra na fatura) e é descontado do saldo do mês.', volta: 'O que sobrou volta para onde você escolher.' } });
+Object.assign(de.viag, { doSaldo: 'Aus dem Monatssaldo', devolvidoSaldo: 'Zurück in den Monatssaldo', grupoGuardado: 'Erspartes', grupoContas: 'Konten und Karten', ficaEm: 'Danach in {n}',
+  origemDica: { saldo: 'Kommt aus dem Saldo dieses Monats. Ausgaben damit verringern den Saldo nicht noch einmal.', meta: 'Kommt aus dem Ersparten; der Monatssaldo ändert sich nicht.',
+    conta: 'Geht vom Kontosaldo ab (bei der Karte in die Abrechnung) und vom Monatssaldo.', volta: 'Der Rest geht dorthin zurück, wo du willst.' } });
+Object.assign(en.viag, { doSaldo: 'From the month’s balance', devolvidoSaldo: 'Returned to the month’s balance', grupoGuardado: 'Savings', grupoContas: 'Accounts and cards', ficaEm: 'Left in {n}',
+  origemDica: { saldo: 'Comes out of this month’s balance. Expenses paid with it don’t reduce the balance again.', meta: 'Comes out of your savings; the month’s balance doesn’t change.',
+    conta: 'Leaves the account balance (on a card, it goes on the statement) and comes off the month’s balance.', volta: 'What’s left goes back wherever you choose.' } });
 
 const DICS = { pt, de, en };
 

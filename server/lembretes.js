@@ -1,8 +1,8 @@
 // Notificações no celular (Web Push): contas a vencer, faturas e orçamento acima do alerta.
 // Funciona no iPhone com o app instalado na tela de início (iOS 16.4 ou mais novo).
 import webpush from 'web-push';
-import { Config, InscricaoPush, LembreteEnviado, Recorrente, Conta, Lancamento, Categoria } from './models.js';
-import { lembretes } from './contas.js';
+import { Config, InscricaoPush, LembreteEnviado, Recorrente, Conta, Lancamento, Categoria, ReservaViagem, Viagem } from './models.js';
+import { lembretes, movimentosSeparados } from './contas.js';
 import { mesDe, round2 } from './finance.js';
 import { obterTaxas, converter } from './cambio.js';
 
@@ -105,6 +105,9 @@ export async function verificarLembretes({ forcar = false } = {}) {
   const hoje = new Date();
   const [recorrentes, cartoes, categorias] = await Promise.all([Recorrente.find({ ativo: true }).lean(), Conta.find({ tipo: 'cartao', arquivada: false }).lean(), Categoria.find({ tipo: 'despesa' }).lean()]);
   const lancCartoes = cartoes.length ? await Lancamento.find({ $or: [{ conta: { $in: cartoes.map((c) => c._id) } }, { contaDestino: { $in: cartoes.map((c) => c._id) } }] }).lean() : [];
+  // dinheiro tirado do cartão para viagens também entra na fatura
+  const reservasCartao = cartoes.length ? await ReservaViagem.find({ conta: { $in: cartoes.map((c) => c._id) } }).lean() : [];
+  if (reservasCartao.length) lancCartoes.push(...movimentosSeparados({ reservasViagem: reservasCartao, viagens: await Viagem.find().lean(), contas: cartoes }).lancamentos);
 
   // orçamento do mês por categoria, na moeda de cada categoria
   const [y, m] = mesDe(hoje).split('-').map(Number);
