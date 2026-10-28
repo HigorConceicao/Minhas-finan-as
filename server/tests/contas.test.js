@@ -201,3 +201,10 @@ test('Einkommensverteiler: excedente, porcentagem e fixo a partir de um salário
   assert.deepEqual(r.atualizar.map((c) => [c._id, c.valor]), [['c3', 200]]);
   assert.deepEqual(r.apagar, ['c9']);
 });
+
+test('"só registro" não entra no saldo do mês', async () => {
+  const { guardadoNoMes } = await import('../contas.js');
+  const metas = [{ _id: 'm', moeda: 'EUR' }];
+  const c = [{ meta: 'm', valor: 1000, data: '2026-03-05T12:00:00Z', registro: true }, { meta: 'm', valor: 100, data: '2026-03-06T12:00:00Z' }];
+  assert.equal(guardadoNoMes(c, metas, (v) => v, '2026-03'), 100);
+});

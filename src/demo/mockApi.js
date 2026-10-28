@@ -107,10 +107,10 @@ function semear() {
   const poup = add('metas', { nome: 'Poupança', icone: '🐷', cor: '#0d8c54', valorAlvo: 10000, moeda: 'EUR', prazo: dia(14, 28), pessoas: [], arquivada: false, tipo: 'poupanca', ignoradas: [], ignoradosSalario: [],
     regraSalario: { ativo: true, modo: 'excedente', valor: 0, limite: 2200, categoria: c('Salário'), conta: giro._id, desde: dia(-2, 1) },
     mensal: { valor: 300, dia: 2, conta: giro._id, desde: dia(-2, 1) } });
-  add('contribuicoes', { meta: poup._id, valor: 1500, data: dia(-14, 1), pessoa: '', nota: 'Saldo inicial', conta: null, valorConta: null });
+  add('contribuicoes', { meta: poup._id, valor: 1500, data: dia(-14, 1), pessoa: '', nota: 'Saldo inicial', conta: null, valorConta: null, registro: true });
   const casa = add('metas', { nome: 'Casa própria', icone: '🏠', cor: '#2952eb', valorAlvo: 40000, moeda: 'EUR', prazo: dia(30, 28), pessoas: ['Eu', 'Ana'], arquivada: false });
-  add('contribuicoes', { meta: casa._id, valor: 6000, data: dia(-14, 1), pessoa: 'Eu', nota: 'Saldo inicial' });
-  add('contribuicoes', { meta: casa._id, valor: 4000, data: dia(-14, 1), pessoa: 'Ana', nota: 'Saldo inicial' });
+  add('contribuicoes', { meta: casa._id, valor: 6000, data: dia(-14, 1), pessoa: 'Eu', nota: 'Saldo inicial', registro: true });
+  add('contribuicoes', { meta: casa._id, valor: 4000, data: dia(-14, 1), pessoa: 'Ana', nota: 'Saldo inicial', registro: true });
   for (let n = -2; n <= 0; n++) {
     if (n === 0 && hojeDia < 5) continue;
     add('contribuicoes', { meta: casa._id, valor: 600, data: dia(n, 5), pessoa: 'Eu', nota: '', conta: n >= -2 ? db.carteira[0]._id : null, valorConta: null });
@@ -556,7 +556,7 @@ function rotear(method, path, q, body) {
       const d = { _id: novoId(), icone: '🎯', cor: '#2952eb', moeda: 'EUR', prazo: null, pessoas: [], arquivada: false, ...limpar(body, ['nome', 'icone', 'cor', 'valorAlvo', 'moeda', 'prazo', 'pessoas']), tipo: 'meta', ignoradas: [], ignoradosSalario: [], mensal: mensalDe(body.mensal, null), regraSalario: regraDe(body.regraSalario, null), createdAt: agoraISO() };
       d.prazo = paraData(d.prazo); d.valorAlvo = round2(d.valorAlvo);
       db.metas.push(d);
-      if (Number(body.jaGuardado) > 0) db.contribuicoes.push({ _id: novoId(), meta: d._id, valor: round2(body.jaGuardado), data: agoraISO(), pessoa: '', nota: '' });
+      if (Number(body.jaGuardado) > 0) db.contribuicoes.push({ _id: novoId(), meta: d._id, valor: round2(body.jaGuardado), data: agoraISO(), pessoa: '', nota: '', registro: true });
       return metaComMetricas(d);
     }
     if (id && !sub && M === 'PUT') {
@@ -577,12 +577,20 @@ function rotear(method, path, q, body) {
       const valor = round2(body.valor);
       const guardado = db.contribuicoes.filter((c) => c.meta === id).reduce((s, c) => s + c.valor, 0);
       if (valor < 0 && -valor > guardado + 0.001) throw new Erro(400, 'Retirada maior que o guardado', 'retirada_maior_guardado', { saldo: round2(guardado), moeda: m.moeda });
-      const conta = contaDeOrigem(body.conta || null);
-      db.contribuicoes.push({ _id: novoId(), meta: id, valor, data: paraData(body.data) || agoraISO(), pessoa: body.pessoa || '', nota: body.nota || '', conta: conta?._id || null, valorConta: naMoedaDaConta(conta, valor, m.moeda, body.valorConta) });
+      const conta = body.registro ? null : contaDeOrigem(body.conta || null);
+      db.contribuicoes.push({ _id: novoId(), meta: id, valor, data: paraData(body.data) || agoraISO(), pessoa: body.pessoa || '', nota: body.nota || '', registro: !!body.registro, conta: conta?._id || null, valorConta: naMoedaDaConta(conta, valor, m.moeda, body.valorConta) });
       return metaComMetricas(m);
     }
   }
   if (a === 'reservas-viagem' && M === 'DELETE') { db.reservasViagem = db.reservasViagem.filter((r) => r._id !== id); db.contribuicoes = db.contribuicoes.filter((c) => c.reservaViagem !== id); return null; }
+  if (a === 'contribuicoes' && M === 'PUT') {
+    const c = achar('contribuicoes', id);
+    if ('registro' in body && !(c.lancamento || c.reservaViagem || c.salario || c.automatica)) {
+      c.registro = !!body.registro;
+      if (c.registro) { c.conta = null; c.valorConta = null; }
+    }
+    return c;
+  }
   if (a === 'contribuicoes' && M === 'DELETE') {
     const c = db.contribuicoes.find((x) => x._id === id);
     if (c?.automatica && c.competencia) { const m = db.metas.find((x) => x._id === c.meta); if (m) { m.ignoradas ||= []; if (!m.ignoradas.includes(c.competencia)) m.ignoradas.push(c.competencia); } }

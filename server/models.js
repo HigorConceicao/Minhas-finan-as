@@ -165,6 +165,8 @@ export const ContribuicaoMeta = model(
       reservaViagem: { type: Schema.Types.ObjectId, ref: 'ReservaViagem', default: null, index: true },
       // depósito automático do mês `competencia`
       automatica: { type: Boolean, default: false },
+      // só registro (dinheiro que já estava guardado): não mexe no saldo do mês nem em conta
+      registro: { type: Boolean, default: false },
       // depósito vindo da regra do salário (o lançamento do salário)
       salario: { type: Schema.Types.ObjectId, ref: 'Lancamento', default: null, index: true },
       competencia: { type: String, default: null },

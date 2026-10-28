@@ -4,7 +4,7 @@ import { dataCompleta, dinheiro, hojeISO, lerNumero, mesAtual, mesCurto, mesNaFr
 import { useT } from '../i18n.js';
 import { BotaoConfirmar, Campo, Carregando, Modal, Segmentado, Vazio, useAviso } from './ui.jsx';
 import Icone from './Icones.jsx';
-import SeletorOrigem, { TIPOS_ORIGEM, lembrarOrigem, origemInicial } from './Origem.jsx';
+import { TIPOS_ORIGEM } from './Origem.jsx';
 import { valorDaRegraSalario as valorDaRegra } from '../../server/contas.js';
 import { useDados } from '../dados.jsx';
 
@@ -299,7 +299,18 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
                       {c.lancamento ? t('metas.pagou', { d: c.nota }) : c.salario ? t('metas.sal.doSalario') : c.nota || (c.automatica ? t('metas.automatico') : c.valor < 0 ? t('metas.retirada') : t('metas.deposito'))}
                       {c.pessoa && <span className="font-normal text-texto-3"> · {c.pessoa}</span>}
                     </p>
-                    <p className="truncate text-xs text-texto-3">{dataCompleta(c.data)}{c.conta && nomeConta(c.conta) && <> · {c.valor < 0 ? '→' : '←'} {nomeConta(c.conta)}</>}</p>
+                    <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-texto-3">
+                      <span>{dataCompleta(c.data)}</span>
+                      {c.conta && nomeConta(c.conta) ? <span>· {c.valor < 0 ? '→' : '←'} {nomeConta(c.conta)}</span>
+                        : c.lancamento || c.reservaViagem || c.salario || c.automatica ? null : (
+                          // trocar entre "conta no saldo do mês" e "só registro"
+                          <button type="button" className={`chip px-2 py-0.5 text-[11px] ${c.registro ? 'bg-cartao text-texto-2' : 'bg-marca-suave text-marca'}`}
+                            title={t('metas.origem.trocar')}
+                            onClick={async () => { await put(`/contribuicoes/${c._id}`, { registro: !c.registro }); await Promise.all([carregar(), aoMudar(), recarregar()]); }}>
+                            {c.registro ? t('metas.origem.chipRegistro') : t('metas.origem.chipSaldo')}
+                          </button>
+                        )}
+                    </p>
                   </div>
                   <span className={`num text-sm font-bold ${c.valor < 0 ? 'text-neg' : 'text-pos'}`}>{c.valor < 0 ? '−' : '+'}{dinheiro(Math.abs(c.valor), meta.moeda)}</span>
                   <BotaoConfirmar className="rounded-full p-2 text-xs font-semibold text-texto-3 hover:bg-neg-suave hover:text-neg" rotulo={t('metas.apagarDep')} texto={t('metas.apagarDep')}
@@ -486,25 +497,39 @@ function FormMeta({ aberto, meta, aoFechar, aoSalvar, aoApagar }) {
 function FormDeposito({ aberto, meta, tipoInicial = 'deposito', aoFechar, aoSalvar }) {
   const t = useT();
   const avisar = useAviso();
-  const { contas, recarregar } = useDados();
+  const { contasAtivas, recarregar } = useDados();
   const [f, setF] = useState({});
+  const [saldoMes, setSaldoMes] = useState(null);
+  const contas = contasAtivas.filter((c) => TIPOS_ORIGEM.includes(c.tipo));
   useEffect(() => {
     if (!aberto || !meta) return;
-    let ultima = '';
-    try { ultima = localStorage.getItem(`mf2-pessoa-${meta._id}`) || ''; } catch {}
-    setF({ tipo: tipoInicial, valor: '', data: hojeISO(), pessoa: meta.pessoas?.includes(ultima) ? ultima : meta.pessoas?.[0] || '', nota: '', conta: origemInicial(contas, true), valorConta: '' });
-  }, [aberto, meta, tipoInicial]);
+    let ultima = '', origem = 'saldo';
+    try { ultima = localStorage.getItem(`mf2-pessoa-${meta._id}`) || ''; origem = localStorage.getItem('mf2-origem-meta') || 'saldo'; } catch {}
+    if (origem.startsWith('conta:') && !contas.some((c) => `conta:${c._id}` === origem)) origem = 'saldo';
+    setF({ tipo: tipoInicial, valor: '', data: hojeISO(), pessoa: meta.pessoas?.includes(ultima) ? ultima : meta.pessoas?.[0] || '', nota: '', origem, valorConta: '' });
+    get(`/resumo?mes=${hojeISO().slice(0, 7)}&base=${meta.moeda}`).then((r) => setSaldoMes(r.saldo)).catch(() => {});
+  }, [aberto, meta, tipoInicial]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!meta) return null;
+  const retirada = f.tipo === 'retirada';
+  const [qual, cid] = String(f.origem || 'saldo').split(':');
+  const conta = qual === 'conta' ? contas.find((c) => c._id === cid) : null;
+  const outraMoeda = conta && conta.moeda !== meta.moeda;
+  const v = lerNumero(f.valor) || 0;
+  const sinal = retirada ? 1 : -1;
+  const depois = qual === 'saldo' && saldoMes != null ? { n: t('lanc.saldoDoMesCurto'), v: saldoMes + sinal * v, m: meta.moeda }
+    : conta && !outraMoeda ? { n: conta.nome, v: conta.saldo + sinal * v, m: conta.moeda } : null;
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
 
   const salvar = async (e) => {
     e.preventDefault();
-    const v = lerNumero(f.valor);
     if (!(v > 0)) return avisar(t('lanc.informeValor'), 'erro');
     try {
       const vc = lerNumero(f.valorConta);
-      await post(`/metas/${meta._id}/contribuicoes`, { valor: f.tipo === 'retirada' ? -v : v, data: f.data, pessoa: f.pessoa, nota: f.nota, conta: f.conta || null, valorConta: f.conta && vc > 0 ? (f.tipo === 'retirada' ? -vc : vc) : null });
-      lembrarOrigem(f.conta);
+      await post(`/metas/${meta._id}/contribuicoes`, {
+        valor: retirada ? -v : v, data: f.data, pessoa: f.pessoa, nota: f.nota, registro: qual === 'registro',
+        conta: conta?._id || null, valorConta: outraMoeda && vc > 0 ? (retirada ? -vc : vc) : null,
+      });
+      try { localStorage.setItem('mf2-origem-meta', f.origem); } catch {}
       recarregar();
       try { if (f.pessoa) localStorage.setItem(`mf2-pessoa-${meta._id}`, f.pessoa); } catch {}
       aoSalvar();
@@ -526,9 +551,31 @@ function FormDeposito({ aberto, meta, tipoInicial = 'deposito', aoFechar, aoSalv
             <Segmentado valor={f.pessoa} aoMudar={(k) => setF((x) => ({ ...x, pessoa: k }))} opcoes={meta.pessoas.map((p) => [p, p])} />
           </Campo>
         )}
-        <SeletorOrigem conta={f.conta} aoMudar={(id) => setF((x) => ({ ...x, conta: id }))} valor={f.valor} moeda={meta.moeda}
-          valorConta={f.valorConta} aoMudarValorConta={(v) => setF((x) => ({ ...x, valorConta: v }))} volta={f.tipo === 'retirada'}
-          dica={f.tipo === 'retirada' ? t('orig.dicaMetaVolta') : t('orig.dicaMeta')} />
+        <div className="space-y-3 rounded-2xl bg-sutil p-4">
+          <Campo rotulo={retirada ? t('orig.paraOnde') : t('orig.deOnde')}>
+            <select id="dep-origem" className="campo bg-cartao" value={f.origem || 'saldo'} onChange={(e) => setF((x) => ({ ...x, origem: e.target.value, valorConta: '' }))}>
+              <option value="saldo">{t('lanc.saldoDoMesCurto')}{saldoMes != null ? ` · ${dinheiro(saldoMes, meta.moeda)}` : ''}</option>
+              {contas.length > 0 && (
+                <optgroup label={t('viag.grupoContas')}>
+                  {contas.map((c) => <option key={c._id} value={`conta:${c._id}`}>{c.nome} · {dinheiro(c.saldo, c.moeda)}</option>)}
+                </optgroup>
+              )}
+              <option value="registro">{retirada ? t('metas.origem.registroRetirada') : t('metas.origem.registro')}</option>
+            </select>
+          </Campo>
+          {outraMoeda && (
+            <Campo rotulo={retirada ? t('orig.voltaNaConta', { m: conta.moeda }) : t('orig.saiDaConta', { m: conta.moeda })}>
+              <input id="dep-valor-conta" className="campo num bg-cartao" inputMode="decimal" value={f.valorConta ?? ''} onChange={(e) => setF((x) => ({ ...x, valorConta: e.target.value }))} placeholder={t('lanc.cambioDoDia')} />
+            </Campo>
+          )}
+          {depois && v > 0 && (
+            <p className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="text-texto-2">{t('viag.ficaEm', { n: depois.n })}</span>
+              <span className={`num font-bold ${depois.v < 0 ? 'text-neg' : ''}`}>{dinheiro(depois.v, depois.m)}</span>
+            </p>
+          )}
+          <p className="text-xs text-texto-3">{t(`metas.origem.dica.${qual}${retirada ? 'Volta' : ''}`)}</p>
+        </div>
         <Campo rotulo={t('comum.nota')}><input id="dep-nota" className="campo" value={f.nota || ''} onChange={set('nota')} /></Campo>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>

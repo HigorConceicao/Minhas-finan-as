@@ -588,7 +588,7 @@ api.post('/metas', wrap(async (req, res) => {
   const meta = await Meta.create(campos);
   // "já guardado" vira a primeira contribuição
   const inicial = round2(Number(req.body?.jaGuardado) || 0);
-  if (inicial > 0) await ContribuicaoMeta.create({ meta: meta._id, valor: inicial, data: new Date(), pessoa: '', nota: '' });
+  if (inicial > 0) await ContribuicaoMeta.create({ meta: meta._id, valor: inicial, data: new Date(), pessoa: '', nota: '', registro: true }); // já estava guardado
   await gerarDepositosAutomaticos();
   res.status(201).json(await metaComMetricas(meta.toObject()));
 }));
@@ -616,9 +616,10 @@ api.delete('/metas/:id', wrap(async (req, res) => {
   res.status(204).end();
 }));
 
-const camposContrib = ({ valor, data, pessoa, nota, conta, valorConta }) =>
+const camposContrib = ({ valor, data, pessoa, nota, conta, valorConta, registro }) =>
   Object.fromEntries(Object.entries({
-    valor: valor === undefined ? undefined : round2(valor), data, pessoa, nota, conta: idOuNulo(conta),
+    registro: registro === undefined ? undefined : !!registro,
+    valor: valor === undefined ? undefined : round2(valor), data, pessoa, nota, conta: registro ? null : idOuNulo(conta),
     valorConta: valorConta === undefined ? undefined : valorConta === null || valorConta === '' ? null : round2(valorConta),
   }).filter(([, v]) => v !== undefined));
 
@@ -662,7 +663,9 @@ api.put('/contribuicoes/:id', wrap(async (req, res) => {
   const antes = await ContribuicaoMeta.findById(req.params.id).lean();
   if (!antes) return erro(res, 404, 'Não encontrado');
   const dados = camposContrib(req.body);
+  if (antes.lancamento || antes.reservaViagem || antes.salario || antes.automatica) delete dados.registro; // esses sempre contam
   const junto = { ...antes, ...dados };
+  if (junto.registro) { dados.conta = null; junto.conta = null; }
   const conta = await contaDeOrigem(junto.conta);
   const meta = await Meta.findById(antes.meta).lean();
   dados.valorConta = await valorNaMoedaDaConta(conta, junto.valor, meta?.moeda, dados.valorConta, junto.data);

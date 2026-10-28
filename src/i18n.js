@@ -673,6 +673,26 @@ Object.assign(pt.erro, { categoria_salario: 'Escolha a categoria do salário.' }
 Object.assign(de.erro, { categoria_salario: 'Wähle die Gehaltskategorie.' });
 Object.assign(en.erro, { categoria_salario: 'Choose the salary category.' });
 
+
+Object.assign(pt.metas, { origem: {
+  registro: 'Já estava guardado (não descontar)', registroRetirada: 'Só registrar (não devolver a nada)',
+  chipSaldo: 'Saldo do mês', chipRegistro: 'Só registro', trocar: 'Tocar para trocar entre saldo do mês e só registro',
+  dica: { saldo: 'Sai do saldo deste mês.', conta: 'Sai do saldo da conta e do saldo deste mês.', registro: 'Só registra na meta. Não mexe no saldo do mês nem em conta.',
+    saldoVolta: 'Volta para o saldo deste mês.', contaVolta: 'Volta para o saldo da conta e para o saldo deste mês.', registroVolta: 'Só registra a retirada. Não mexe no saldo do mês nem em conta.' },
+} });
+Object.assign(de.metas, { origem: {
+  registro: 'War schon gespart (nicht abziehen)', registroRetirada: 'Nur erfassen (nirgends gutschreiben)',
+  chipSaldo: 'Monatssaldo', chipRegistro: 'Nur erfasst', trocar: 'Tippen, um zwischen Monatssaldo und nur erfasst zu wechseln',
+  dica: { saldo: 'Wird vom Saldo dieses Monats abgezogen.', conta: 'Wird vom Konto und vom Saldo dieses Monats abgezogen.', registro: 'Nur im Sparziel erfasst. Monatssaldo und Konten bleiben gleich.',
+    saldoVolta: 'Geht zurück in den Saldo dieses Monats.', contaVolta: 'Geht zurück aufs Konto und in den Saldo dieses Monats.', registroVolta: 'Nur erfasst. Monatssaldo und Konten bleiben gleich.' },
+} });
+Object.assign(en.metas, { origem: {
+  registro: 'Already saved (don’t deduct)', registroRetirada: 'Just record it (don’t put it anywhere)',
+  chipSaldo: 'Month’s balance', chipRegistro: 'Record only', trocar: 'Tap to switch between month’s balance and record only',
+  dica: { saldo: 'Comes off this month’s balance.', conta: 'Comes off the account and this month’s balance.', registro: 'Only recorded in the goal. The month’s balance and accounts don’t change.',
+    saldoVolta: 'Goes back to this month’s balance.', contaVolta: 'Goes back to the account and this month’s balance.', registroVolta: 'Only recorded. The month’s balance and accounts don’t change.' },
+} });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

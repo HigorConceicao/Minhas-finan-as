@@ -313,7 +313,8 @@ export function movimentosSeparados({ contribuicoes = [], metas = [], reservasVi
  */
 export function guardadoNoMes(contribuicoes, metas, conv, mes) {
   const moeda = new Map(metas.map((m) => [idDe(m), m.moeda]));
-  return round2(contribuicoes.filter((c) => mesDe(c.data) === mes && moeda.has(idDe(c.meta)))
+  // "só registro" (dinheiro que já estava guardado) não entra no saldo do mês
+  return round2(contribuicoes.filter((c) => !c.registro && mesDe(c.data) === mes && moeda.has(idDe(c.meta)))
     .reduce((s, c) => s + conv(Number(c.valor), moeda.get(idDe(c.meta))), 0));
 }
 
