@@ -171,10 +171,19 @@ async function gerarDepositosAutomaticos(hoje = new Date()) {
   return gerandoDepositos;
 }
 
-/** A poupança existe sempre (é criada na primeira vez) */
+/**
+ * A poupança separada foi retirada do app: a que existir vazia é apagada; com dinheiro,
+ * vira uma meta comum (nada se perde).
+ */
+let poupancaRevisada = false;
 async function garantirPoupanca() {
-  if (await Meta.exists({ tipo: 'poupanca' })) return;
-  await Meta.create({ nome: 'Poupança', icone: '🐷', cor: '#0d8c54', valorAlvo: 0, moeda: 'EUR', tipo: 'poupanca' });
+  if (poupancaRevisada) return;
+  for (const p of await Meta.find({ tipo: 'poupanca' }).lean()) {
+    const usada = await ContribuicaoMeta.exists({ meta: p._id }) || p.regraSalario?.ativo || p.mensal?.valor > 0;
+    if (usada) await Meta.updateOne({ _id: p._id }, { tipo: 'meta' });
+    else { await Lancamento.updateMany({ meta: p._id }, { meta: null }); await Meta.deleteOne({ _id: p._id }); }
+  }
+  poupancaRevisada = true;
 }
 
 // ---------- gasto pago com dinheiro guardado (poupança ou meta) ----------

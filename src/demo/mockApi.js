@@ -120,7 +120,7 @@ function semear() {
 
   // metas: uma conjunta com prazo, uma individual sem prazo
   // poupança: 300 por mês, automático no dia 2, saindo da conta corrente
-  const poup = add('metas', { nome: 'Poupança', icone: '🐷', cor: '#0d8c54', valorAlvo: 10000, moeda: 'EUR', prazo: dia(14, 28), pessoas: [], arquivada: false, tipo: 'poupanca', ignoradas: [], ignoradosSalario: [],
+  const poup = add('metas', { nome: 'Fundo livre', icone: '💰', cor: '#0d8c54', valorAlvo: 10000, moeda: 'EUR', prazo: dia(14, 28), pessoas: [], arquivada: false, tipo: 'meta', ignoradas: [], ignoradosSalario: [],
     regraSalario: { ativo: true, modo: 'excedente', valor: 0, limite: 2200, categoria: c('Salário'), conta: giro._id, desde: dia(-2, 1), ordem: 0 },
     mensal: { valor: 300, dia: 2, conta: giro._id, desde: dia(-2, 1) } });
   add('contribuicoes', { meta: poup._id, valor: 1500, data: dia(-14, 1), pessoa: '', nota: 'Saldo inicial', conta: null, valorConta: null, registro: true });

@@ -207,7 +207,8 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
   const podePagarComGuardado = f.tipo === 'despesa' && !parcelado;
   const opcoesMeta = metas.filter((m) => (!m.arquivada && m.guardado > 0) || m._id === f.meta);
   const metaSel = metas.find((m) => m._id === f.meta);
-  const poupanca = metas.find((m) => m.tipo === 'poupanca' && !m.arquivada);
+  // sem saldo no mês: sugere a meta com mais dinheiro guardado
+  const sugerida = [...metas].filter((m) => !m.arquivada && m.guardado > 0).sort((a, b) => b.guardado - a.guardado)[0];
   const valorNum = lerNumero(f.valor) || 0;
   // ao editar um gasto do mesmo mês que já saía do saldo, ele não conta contra si mesmo
   const jaNoSaldo = !novo && item?.tipo === 'despesa' && !item.meta && mesDaData(item.data) === mesDoGasto && item.moeda === f.moeda ? Number(item.valor) : 0;
@@ -267,9 +268,9 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
             {faltaSaldo && (
               <div className="text-sm">
                 <p className="font-semibold text-aviso">{t('lanc.semSaldo', { v: dinheiro(Math.max(0, disponivel), f.moeda) })}</p>
-                {poupanca?.guardado > 0 && (
-                  <button type="button" className="btn-secundario mt-2 w-full bg-cartao" onClick={() => setF((x) => ({ ...x, meta: poupanca._id }))}>
-                    {poupanca.icone} {t('lanc.usarPoupanca', { n: poupanca.nome, v: dinheiro(poupanca.guardado, poupanca.moeda) })}
+                {sugerida && (
+                  <button type="button" className="btn-secundario mt-2 w-full bg-cartao" onClick={() => setF((x) => ({ ...x, meta: sugerida._id }))}>
+                    {sugerida.icone} {t('lanc.usarPoupanca', { n: sugerida.nome, v: dinheiro(sugerida.guardado, sugerida.moeda) })}
                   </button>
                 )}
               </div>
