@@ -24,6 +24,7 @@ export default function Metas() {
   const [form, setForm] = useState(null);
   const [deposito, setDeposito] = useState(null); // { meta, tipo }
   const [detalhe, setDetalhe] = useState(null);
+  const [objetivo, setObjetivo] = useState(null);
   const carregar = useCallback(async () => setLista(await get('/metas')), []);
   useEffect(() => { carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar]);
 
@@ -42,7 +43,7 @@ export default function Metas() {
         <button className="btn-primario" onClick={() => setForm({})}><Icone nome="mais" className="h-4 w-4" forte />{t('metas.nova')}</button>
       </div>
 
-      {poupanca && <CartaoPoupanca meta={poupanca} aoAbrir={() => setDetalhe(poupanca)} aoGuardar={(tipo) => setDeposito({ meta: poupanca, tipo })} aoConfigurar={() => setForm(poupanca)} />}
+      {poupanca && <CartaoPoupanca meta={poupanca} aoAbrir={() => setDetalhe(poupanca)} aoGuardar={(tipo) => setDeposito({ meta: poupanca, tipo })} aoConfigurar={() => setForm(poupanca)} aoObjetivo={() => setObjetivo(poupanca)} />}
 
       {lista.some((m) => m.regraSalario?.ativo && !m.arquivada) && <CartaoDistribuicao aoMudar={carregar} aoEditar={(m) => setForm(lista.find((x) => x._id === m._id) || m)} />}
 
@@ -81,10 +82,51 @@ export default function Metas() {
         aoEditar={(m) => { setDetalhe(null); setForm(m); }}
         aoGuardar={(m, tipo) => setDeposito({ meta: m, tipo })}
         aoMudar={carregar} />
+      <ModalObjetivo meta={objetivo} aoFechar={() => setObjetivo(null)} aoSalvar={async () => { setObjetivo(null); await carregar(); avisar(t('metas.objetivo.salvo')); }} />
       {/* depois dos detalhes, para abrir por cima deles */}
       <FormDeposito aberto={deposito !== null} meta={deposito?.meta} tipoInicial={deposito?.tipo} aoFechar={() => setDeposito(null)}
         aoSalvar={async () => { setDeposito(null); await carregar(); avisar(t('metas.registrado')); }} />
     </div>
+  );
+}
+
+/** Objetivo da poupança: o valor que você quer juntar (e, se quiser, até quando) */
+function ModalObjetivo({ meta, aoFechar, aoSalvar }) {
+  const t = useT();
+  const avisar = useAviso();
+  const [valor, setValor] = useState('');
+  const [prazo, setPrazo] = useState('');
+  useEffect(() => { if (meta) { setValor(meta.valorAlvo > 0 ? paraCampo(meta.valorAlvo) : ''); setPrazo(paraInput(meta.prazo)); } }, [meta]);
+  if (!meta) return null;
+  const salvar = async (e, remover) => {
+    e?.preventDefault();
+    const v = remover ? 0 : lerNumero(valor);
+    if (!remover && !(v > 0)) return avisar(t('metas.alvoInvalido'), 'erro');
+    try { await put(`/metas/${meta._id}`, { valorAlvo: v, prazo: remover ? null : prazo || null }); aoSalvar(); }
+    catch (err) { avisar(err.message, 'erro'); }
+  };
+  const v = lerNumero(valor) || 0;
+  return (
+    <Modal titulo={t('metas.objetivo.titulo', { n: meta.nome })} aberto={!!meta} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="space-y-4">
+        <Campo rotulo={`${t('metas.objetivo.quanto')} (${meta.moeda})`} dica={t('metas.guardado', { v: dinheiro(meta.guardado, meta.moeda) })}>
+          <input id="obj-valor" className="campo num text-2xl font-bold" inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="10.000" autoFocus />
+        </Campo>
+        <Campo rotulo={t('metas.prazoCampo')}><input id="obj-prazo" type="date" className="campo" value={prazo} onChange={(e) => setPrazo(e.target.value)} /></Campo>
+        {v > 0 && (
+          <p className="rounded-2xl bg-sutil p-3 text-sm text-texto-2">
+            {v <= meta.guardado ? t('metas.objetivo.jaAtingido') : t('metas.objetivo.faltam', { v: dinheiro(v - meta.guardado, meta.moeda) })}
+          </p>
+        )}
+        <div className="flex flex-wrap justify-between gap-2 pt-2">
+          {meta.valorAlvo > 0 ? <button type="button" className="btn-perigo" onClick={() => salvar(null, true)}>{t('metas.objetivo.remover')}</button> : <span />}
+          <div className="flex gap-2">
+            <button type="button" className="btn-secundario" onClick={aoFechar}>{t('comum.cancelar')}</button>
+            <button className="btn-primario">{t('comum.salvar')}</button>
+          </div>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -165,7 +207,7 @@ function textoRegra(meta, t) {
 }
 
 /** Poupança: dinheiro guardado que acumula mês a mês (com objetivo opcional) */
-function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar }) {
+function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar, aoObjetivo }) {
   const t = useT();
   const { contas } = useDados();
   const serie = meta.serie || [];
@@ -184,7 +226,9 @@ function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar }) {
       </button>
       <div className="mt-4 flex items-end justify-between gap-2">
         <p className="num text-4xl font-extrabold tracking-tight">{dinheiro(meta.guardado, meta.moeda)}</p>
-        {meta.valorAlvo > 0 && <p className="num pb-1 text-sm opacity-75">{t('metas.de')} {dinheiro(meta.valorAlvo, meta.moeda)}</p>}
+        {meta.valorAlvo > 0
+          ? <button className="num flex shrink-0 items-center gap-1 whitespace-nowrap pb-1 text-sm opacity-80 hover:opacity-100" onClick={aoObjetivo} aria-label={t('metas.objetivo.editar')}>{t('metas.de')} {dinheiro(meta.valorAlvo, meta.moeda)} <Icone nome="lapis" className="h-3.5 w-3.5" /></button>
+          : <button className="mb-1 flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold hover:bg-white/25" onClick={aoObjetivo}><Icone nome="meta" className="h-3.5 w-3.5" forte />{t('metas.objetivo.definir')}</button>}
       </div>
       {meta.valorAlvo > 0 && (
         <div className="mt-3">

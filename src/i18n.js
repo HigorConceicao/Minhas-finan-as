@@ -824,6 +824,14 @@ Object.assign(pt.erro, { confirmacao_reset: 'Escreva ZERAR para confirmar.' });
 Object.assign(de.erro, { confirmacao_reset: 'Schreibe ZERAR zur Bestätigung.' });
 Object.assign(en.erro, { confirmacao_reset: 'Type ZERAR to confirm.' });
 
+
+Object.assign(pt.metas, { objetivo: { definir: 'Definir meta', editar: 'Mudar a meta', titulo: 'Meta da {n}', quanto: 'Quanto você quer juntar', salvo: 'Meta salva',
+  remover: 'Tirar a meta', jaAtingido: 'Você já tem esse valor guardado.', faltam: 'Faltam {v} para chegar lá.' } });
+Object.assign(de.metas, { objetivo: { definir: 'Ziel setzen', editar: 'Ziel ändern', titulo: 'Ziel für {n}', quanto: 'Wie viel willst du sparen', salvo: 'Ziel gespeichert',
+  remover: 'Ziel entfernen', jaAtingido: 'Diesen Betrag hast du schon gespart.', faltam: 'Noch {v} bis zum Ziel.' } });
+Object.assign(en.metas, { objetivo: { definir: 'Set a goal', editar: 'Change the goal', titulo: 'Goal for {n}', quanto: 'How much you want to save', salvo: 'Goal saved',
+  remover: 'Remove the goal', jaAtingido: 'You already have this amount saved.', faltam: '{v} to go.' } });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
