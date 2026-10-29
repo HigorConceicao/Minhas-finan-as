@@ -100,14 +100,17 @@ function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
   const [tema, setTema] = useState(() => lerPref('mf2-tema', 'sistema'));
   const mudarTema = (v) => { setTema(v); gravarPref('mf2-tema', v); aplicarTema(v); };
   const { diaInicioMes, salvarDiaInicio } = useDados();
+  const [zerar, setZerar] = useState(false);
 
   const exportar = async () => {
     try {
       const r = await fetch('/api/exportar', { headers: sessao.token ? { authorization: `Bearer ${sessao.token}` } : {} });
+      if (!r.ok) throw new Error();
       const blob = await r.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob); a.download = `minhas-financas-${new Date().toISOString().slice(0, 10)}.json`; a.click();
-    } catch { avisar(t('app.backupErro'), 'erro'); }
+      return true;
+    } catch { avisar(t('app.backupErro'), 'erro'); return false; }
   };
 
   return (
@@ -133,11 +136,58 @@ function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
             <button className="flex w-full items-center gap-3 rounded-2xl bg-sutil p-4 text-left text-sm font-semibold hover:bg-linha" onClick={exportar}>
               <Icone nome="download" /> <span className="flex-1">{t('app.backupDica')}</span>
             </button>
+            <button className="flex w-full items-center gap-3 rounded-2xl p-4 text-left text-sm font-semibold text-neg hover:bg-neg-suave" onClick={() => setZerar(true)}>
+              <Icone nome="lixo" /> <span className="flex-1">{t('zerar.botao')}</span>
+            </button>
             {protegido && (
               <button className="flex w-full items-center gap-3 rounded-2xl p-4 text-left text-sm font-semibold text-neg hover:bg-neg-suave" onClick={aoSair}>
                 <Icone nome="sair" /> <span className="flex-1">{t('ajustes.sair')}</span>
               </button>
             )}
+          </div>
+        )}
+      </div>
+      <ModalZerar aberto={zerar} aoFechar={() => setZerar(false)} exportar={exportar} />
+    </Modal>
+  );
+}
+
+/** Zerar os dados para recomeçar: backup primeiro, depois confirmação escrita */
+function ModalZerar({ aberto, aoFechar, exportar }) {
+  const t = useT();
+  const avisar = useAviso();
+  const [etapa, setEtapa] = useState(1);
+  const [texto, setTexto] = useState('');
+  const [manter, setManter] = useState(true);
+  const [ocupado, setOcupado] = useState(false);
+  useEffect(() => { if (aberto) { setEtapa(1); setTexto(''); setManter(true); } }, [aberto]);
+  const confirmar = async () => {
+    setOcupado(true);
+    try {
+      await post('/resetar', { confirmacao: texto, manterCategorias: manter });
+      avisar(t('zerar.feito'));
+      setTimeout(() => { location.hash = 'visao'; location.reload(); }, 800);
+    } catch (e) { avisar(e.message, 'erro'); setOcupado(false); }
+  };
+  return (
+    <Modal titulo={t('zerar.titulo')} aberto={aberto} aoFechar={aoFechar}>
+      <div className="space-y-4 text-sm">
+        <p className="text-texto-2">{t('zerar.apaga')}</p>
+        <p className="text-texto-2">{t('zerar.mantem')}</p>
+        <label htmlFor="zerar-cat" className="flex cursor-pointer items-start gap-3 rounded-2xl bg-sutil p-4">
+          <input id="zerar-cat" type="checkbox" checked={manter} onChange={(e) => setManter(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--marca))]" />
+          <span><span className="block font-semibold">{t('zerar.manterCat')}</span><span className="block text-xs text-texto-3">{t('zerar.manterCatDica')}</span></span>
+        </label>
+        {etapa === 1 ? (
+          <div className="space-y-2">
+            <button className="btn-primario w-full" onClick={async () => { if (await exportar()) setEtapa(2); }}><Icone nome="download" className="h-4 w-4" />{t('zerar.backup')}</button>
+            <button className="w-full text-center text-xs font-semibold text-texto-3 underline" onClick={() => setEtapa(2)}>{t('zerar.semBackup')}</button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <label htmlFor="zerar-texto" className="block font-semibold">{t('zerar.digite')}</label>
+            <input id="zerar-texto" className="campo font-bold tracking-widest" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="ZERAR" autoComplete="off" autoCapitalize="characters" />
+            <button className="btn w-full bg-neg text-cartao hover:opacity-90 disabled:opacity-40" disabled={texto.trim().toUpperCase() !== 'ZERAR' || ocupado} onClick={confirmar}>{t('zerar.confirmar')}</button>
           </div>
         )}
       </div>

@@ -795,6 +795,35 @@ Object.assign(en.metas, { dist: {
   dica: 'Tap a goal to change its rule. Changing the order also re-splits salaries received since the rules were turned on.',
 } });
 
+
+pt.zerar = {
+  botao: 'Zerar dados e começar de novo', titulo: 'Zerar dados',
+  apaga: 'Apaga lançamentos, recorrentes, contas, cartões, rendimentos, metas, poupança, viagens e o histórico do Apple Pay.',
+  mantem: 'Continuam: idioma, aparência, dia de início do mês, notificações e a chave do Apple Pay (o atalho no iPhone segue funcionando).',
+  manterCat: 'Manter minhas categorias e orçamentos', manterCatDica: 'Desmarque para voltar às categorias padrão.',
+  backup: 'Baixar backup e continuar', semBackup: 'Continuar sem backup', digite: 'Escreva ZERAR para confirmar. Não dá para desfazer.',
+  confirmar: 'Zerar tudo', feito: 'Dados zerados',
+};
+de.zerar = {
+  botao: 'Daten löschen und neu anfangen', titulo: 'Daten löschen',
+  apaga: 'Löscht Buchungen, Daueraufträge, Konten, Karten, Zinskonten, Sparziele, Ersparnisse, Reisen und den Apple-Pay-Verlauf.',
+  mantem: 'Bleiben erhalten: Sprache, Darstellung, Monatsbeginn, Benachrichtigungen und der Apple-Pay-Schlüssel (der Kurzbefehl funktioniert weiter).',
+  manterCat: 'Meine Kategorien und Budgets behalten', manterCatDica: 'Abwählen, um zu den Standardkategorien zurückzukehren.',
+  backup: 'Backup laden und weiter', semBackup: 'Ohne Backup weiter', digite: 'Schreibe ZERAR zur Bestätigung. Nicht rückgängig zu machen.',
+  confirmar: 'Alles löschen', feito: 'Daten gelöscht',
+};
+en.zerar = {
+  botao: 'Reset data and start over', titulo: 'Reset data',
+  apaga: 'Deletes transactions, recurring items, accounts, cards, savings accounts, goals, savings, trips and the Apple Pay history.',
+  mantem: 'Kept: language, appearance, month start day, notifications and the Apple Pay key (the iPhone shortcut keeps working).',
+  manterCat: 'Keep my categories and budgets', manterCatDica: 'Untick to go back to the default categories.',
+  backup: 'Download backup and continue', semBackup: 'Continue without backup', digite: 'Type ZERAR to confirm. This can’t be undone.',
+  confirmar: 'Reset everything', feito: 'Data reset',
+};
+Object.assign(pt.erro, { confirmacao_reset: 'Escreva ZERAR para confirmar.' });
+Object.assign(de.erro, { confirmacao_reset: 'Schreibe ZERAR zur Bestätigung.' });
+Object.assign(en.erro, { confirmacao_reset: 'Type ZERAR to confirm.' });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

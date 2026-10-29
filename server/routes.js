@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import {
-  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem, Config,
+  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem, Config, LembreteEnviado,
 } from './models.js';
 import {
   saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes, sincronizarRegraSalario,
@@ -16,6 +16,7 @@ import {
 import { obterTaxas, converter, conversorPorDia, taxasNaData } from './cambio.js';
 import { lerTransacaoAtalho, categoriaDoComerciante, contaDoCartao } from './applepay.js';
 import { chaveRegra } from '../src/importacao.js';
+import { CATEGORIAS_PADRAO } from './padrao.js';
 
 const api = Router();
 
@@ -372,6 +373,26 @@ api.put('/distribuicao/ordem', wrap(async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).filter(validarId);
   await Promise.all(ids.map((id, i) => Meta.updateOne({ _id: id }, { 'regraSalario.ordem': i })));
   await gerarDepositosAutomaticos();
+  res.json({ ok: true });
+}));
+
+/**
+ * Zera os dados para começar de novo. Exige confirmação escrita. Mantém: preferências, notificações
+ * e a chave do Apple Pay. Com `manterCategorias`, mantém categorias (com orçamentos) e regras.
+ */
+api.post('/resetar', wrap(async (req, res) => {
+  if (String(req.body?.confirmacao || '').trim().toUpperCase() !== 'ZERAR') return erro(res, 400, 'Escreva ZERAR para confirmar', 'confirmacao_reset');
+  const manter = req.body?.manterCategorias !== false;
+  await Promise.all([
+    Lancamento.deleteMany({}), Recorrente.deleteMany({}), ContaRendimento.deleteMany({}), Movimento.deleteMany({}),
+    Meta.deleteMany({}), ContribuicaoMeta.deleteMany({}), Conta.deleteMany({}), Viagem.deleteMany({}), ReservaViagem.deleteMany({}),
+    LembreteEnviado.deleteMany({}),
+    ...(manter ? [] : [Categoria.deleteMany({}), RegraCategoria.deleteMany({})]),
+  ]);
+  if (!manter) await Categoria.insertMany(CATEGORIAS_PADRAO.map((c) => ({ tipo: 'despesa', ...c })));
+  // Apple Pay: a chave continua valendo; vínculos de cartões e histórico eram de contas que não existem mais
+  const atalho = await lerConfigAtalho();
+  if (atalho.chave || atalho.conta) await gravarConfigAtalho({ chave: atalho.chave, cartoes: {}, ultimos: [] });
   res.json({ ok: true });
 }));
 
