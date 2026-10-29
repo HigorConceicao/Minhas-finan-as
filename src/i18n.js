@@ -832,6 +832,15 @@ Object.assign(de.metas, { objetivo: { definir: 'Ziel setzen', editar: 'Ziel änd
 Object.assign(en.metas, { objetivo: { definir: 'Set a goal', editar: 'Change the goal', titulo: 'Goal for {n}', quanto: 'How much you want to save', salvo: 'Goal saved',
   remover: 'Remove the goal', jaAtingido: 'You already have this amount saved.', faltam: '{v} to go.' } });
 
+
+Object.assign(pt.visao, { usadoReservas: 'Das reservas' }); Object.assign(de.visao, { usadoReservas: 'Aus Rücklagen' }); Object.assign(en.visao, { usadoReservas: 'From savings' });
+Object.assign(pt.metas, { negativo: { texto: 'O saldo ficou negativo (sobra de depósitos apagados).', botao: 'Corrigir para zero', nota: 'Correção de saldo', corrigido: 'Saldo corrigido' } });
+Object.assign(de.metas, { negativo: { texto: 'Der Stand ist negativ (gelöschte Einzahlungen).', botao: 'Auf null korrigieren', nota: 'Korrektur', corrigido: 'Stand korrigiert' } });
+Object.assign(en.metas, { negativo: { texto: 'The balance went negative (deleted deposits).', botao: 'Fix to zero', nota: 'Balance correction', corrigido: 'Balance fixed' } });
+Object.assign(pt.erro, { guardado_negativo: 'Não dá para apagar: esse dinheiro já foi usado (o saldo ficaria negativo). Apague antes a retirada ou o gasto.' });
+Object.assign(de.erro, { guardado_negativo: 'Löschen nicht möglich: Das Geld wurde schon verwendet (der Stand würde negativ). Lösche zuerst die Entnahme oder Ausgabe.' });
+Object.assign(en.erro, { guardado_negativo: 'Can’t delete: that money was already used (the balance would go negative). Delete the withdrawal or expense first.' });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

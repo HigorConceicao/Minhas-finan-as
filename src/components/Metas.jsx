@@ -43,7 +43,7 @@ export default function Metas() {
         <button className="btn-primario" onClick={() => setForm({})}><Icone nome="mais" className="h-4 w-4" forte />{t('metas.nova')}</button>
       </div>
 
-      {poupanca && <CartaoPoupanca meta={poupanca} aoAbrir={() => setDetalhe(poupanca)} aoGuardar={(tipo) => setDeposito({ meta: poupanca, tipo })} aoConfigurar={() => setForm(poupanca)} aoObjetivo={() => setObjetivo(poupanca)} />}
+      {poupanca && <CartaoPoupanca meta={poupanca} aoAbrir={() => setDetalhe(poupanca)} aoGuardar={(tipo) => setDeposito({ meta: poupanca, tipo })} aoConfigurar={() => setForm(poupanca)} aoObjetivo={() => setObjetivo(poupanca)} aoMudar={carregar} />}
 
       {lista.some((m) => m.regraSalario?.ativo && !m.arquivada) && <CartaoDistribuicao aoMudar={carregar} aoEditar={(m) => setForm(lista.find((x) => x._id === m._id) || m)} />}
 
@@ -207,7 +207,27 @@ function textoRegra(meta, t) {
 }
 
 /** Poupança: dinheiro guardado que acumula mês a mês (com objetivo opcional) */
-function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar, aoObjetivo }) {
+/** Saldo negativo numa meta (sobrou de testes ou de depósitos apagados): corrige com um registro */
+function AvisoNegativo({ meta, aoCorrigido, claro }) {
+  const t = useT();
+  const avisar = useAviso();
+  if (!(meta.guardado < -0.004)) return null;
+  const corrigir = async () => {
+    try {
+      await post(`/metas/${meta._id}/contribuicoes`, { valor: round2(-meta.guardado), registro: true, nota: t('metas.negativo.nota') });
+      avisar(t('metas.negativo.corrigido')); aoCorrigido();
+    } catch (e) { avisar(e.message, 'erro'); }
+  };
+  return (
+    <div className={`mt-3 flex items-center gap-3 rounded-2xl p-3 text-xs font-semibold ${claro ? 'bg-white/15' : 'bg-aviso-suave text-aviso'}`}>
+      <span className="flex-1">{t('metas.negativo.texto')}</span>
+      <button className={`shrink-0 rounded-full px-3 py-1.5 font-bold ${claro ? 'bg-white text-capa' : 'bg-cartao text-texto'}`} onClick={corrigir}>{t('metas.negativo.botao')}</button>
+    </div>
+  );
+}
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar, aoObjetivo, aoMudar }) {
   const t = useT();
   const { contas } = useDados();
   const serie = meta.serie || [];
@@ -241,6 +261,7 @@ function CartaoPoupanca({ meta, aoAbrir, aoGuardar, aoConfigurar, aoObjetivo }) 
           </p>
         </div>
       )}
+      <AvisoNegativo meta={meta} aoCorrigido={aoMudar} claro />
       {esteMes !== 0 && <p className="num mt-1 text-sm opacity-80">{t('metas.esteMes', { v: `${esteMes > 0 ? '+' : '−'}${dinheiro(Math.abs(esteMes), meta.moeda)}` })}</p>}
       <button className="mt-4 flex w-full items-center gap-2 rounded-2xl bg-white/10 p-3 text-left text-sm hover:bg-white/15" onClick={aoConfigurar}>
         <Icone nome="recorrente" className="h-4 w-4 shrink-0" />
@@ -372,6 +393,7 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
           {(!ehPoupanca || meta.valorAlvo > 0) && <BarraMeta meta={meta} />}
           <LegendaPessoas meta={meta} />
         </div>
+        <AvisoNegativo meta={meta} aoCorrigido={() => { carregar(); aoMudar(); }} />
         {(!ehPoupanca || meta.valorAlvo > 0) && <LinhaPlano meta={meta} />}
         {ehPoupanca && (
           <div className="space-y-1 text-sm text-texto-2">
@@ -427,7 +449,10 @@ function DetalheMeta({ meta, aoFechar, aoEditar, aoGuardar, aoMudar }) {
                   </div>
                   <span className={`num text-sm font-bold ${c.valor < 0 ? 'text-neg' : 'text-pos'}`}>{c.valor < 0 ? '−' : '+'}{dinheiro(Math.abs(c.valor), meta.moeda)}</span>
                   <BotaoConfirmar className="rounded-full p-2 text-xs font-semibold text-texto-3 hover:bg-neg-suave hover:text-neg" rotulo={t('metas.apagarDep')} texto={t('metas.apagarDep')}
-                    aoConfirmar={async () => { await del(`/contribuicoes/${c._id}`); await Promise.all([carregar(), aoMudar(), recarregar()]); }}>
+                    aoConfirmar={async () => {
+                      try { await del(`/contribuicoes/${c._id}`); } catch (e) { return avisar(e.message, 'erro'); }
+                      await Promise.all([carregar(), aoMudar(), recarregar()]);
+                    }}>
                     <Icone nome="lixo" className="h-4 w-4" />
                   </BotaoConfirmar>
                 </li>

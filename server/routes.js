@@ -828,6 +828,12 @@ api.put('/contribuicoes/:id', wrap(async (req, res) => {
 }));
 api.delete('/contribuicoes/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const alvo = await ContribuicaoMeta.findById(req.params.id).lean();
+  // apagar um depósito não pode deixar a meta com saldo negativo (o dinheiro já foi usado)
+  if (alvo?.valor > 0) {
+    const total = (await ContribuicaoMeta.find({ meta: alvo.meta }).lean()).reduce((s, x) => s + Number(x.valor), 0);
+    if (total - alvo.valor < -0.004) return erro(res, 400, 'Esse dinheiro já foi usado', 'guardado_negativo', { saldo: round2(total) });
+  }
   const c = await ContribuicaoMeta.findByIdAndDelete(req.params.id).lean();
   // depósito automático apagado não volta; retirada de um gasto apagada: o gasto passa a sair do saldo do mês
   if (c?.automatica && c.competencia) await Meta.updateOne({ _id: c.meta }, { $addToSet: { ignoradas: c.competencia } });

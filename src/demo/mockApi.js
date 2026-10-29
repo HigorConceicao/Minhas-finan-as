@@ -662,6 +662,10 @@ function rotear(method, path, q, body) {
   }
   if (a === 'contribuicoes' && M === 'DELETE') {
     const c = db.contribuicoes.find((x) => x._id === id);
+    if (c?.valor > 0) {
+      const total = db.contribuicoes.filter((x) => x.meta === c.meta).reduce((s, x) => s + x.valor, 0);
+      if (total - c.valor < -0.004) throw new Erro(400, 'Esse dinheiro já foi usado', 'guardado_negativo', { saldo: round2(total) });
+    }
     if (c?.automatica && c.competencia) { const m = db.metas.find((x) => x._id === c.meta); if (m) { m.ignoradas ||= []; if (!m.ignoradas.includes(c.competencia)) m.ignoradas.push(c.competencia); } }
     if (c?.lancamento) { const l = db.lancamentos.find((x) => x._id === c.lancamento); if (l) l.meta = null; }
     if (c?.salario) { const m = db.metas.find((x) => x._id === c.meta); if (m) { m.ignoradosSalario ||= []; m.ignoradosSalario.push(String(c.salario)); } }

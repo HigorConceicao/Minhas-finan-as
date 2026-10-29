@@ -41,8 +41,9 @@ export default function Visao({ mes, setMes, base, setBase, resumo, irPara, novo
           </div>
           {resumo.metasMes !== 0 && resumo.metasMes != null && (
             <button className="rounded-2xl bg-white/10 p-3 text-left hover:bg-white/15" onClick={() => irPara('metas')}>
-              <p className="flex items-center gap-1.5 text-xs font-semibold opacity-80"><Icone nome="meta" className="h-3.5 w-3.5" forte /> {t('visao.metasMes')}</p>
-              <p className="num mt-1 text-base font-bold sm:text-lg">{dinheiro(resumo.metasMes, base)}</p>
+              {/* negativo = no mês saiu mais das reservas do que entrou: mostra como "usado das reservas", sem sinal */}
+              <p className="flex items-center gap-1.5 text-xs font-semibold opacity-80"><Icone nome="meta" className="h-3.5 w-3.5" forte /> {resumo.metasMes < 0 ? t('visao.usadoReservas') : t('visao.metasMes')}</p>
+              <p className="num mt-1 text-base font-bold sm:text-lg">{dinheiro(Math.abs(resumo.metasMes), base)}</p>
             </button>
           )}
         </div>
