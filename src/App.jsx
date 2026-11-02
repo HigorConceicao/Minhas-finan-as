@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { get, post, sessao } from './api.js';
+import { get, post, put } from './api.js';
+import Acesso, { linkDeAcesso } from './components/Acesso.jsx';
+import { ModalSenha, ModalUsuarios } from './components/Usuarios.jsx';
 import { mesAtual } from './fmt.js';
 import { IDIOMAS, ProvedorIdioma, useIdioma, useT } from './i18n.js';
 import { Carregando, Modal, ProvedorAvisos, Segmentado, useAviso } from './components/ui.jsx';
@@ -50,50 +52,48 @@ export default function App({ antes = null }) {
   );
 }
 
+/** Dados guardados no aparelho que são de quem estava logado (some ao sair) */
+function limparDadosLocais() {
+  try {
+    for (const k of Object.keys(localStorage)) if (/^mf2-(dia-mes|conta|origem|pessoa|moeda|lemb|base)/.test(k)) localStorage.removeItem(k);
+  } catch {}
+}
+
 function Porteiro() {
-  const [estado, setEstado] = useState('verificando');
-  const [protegido, setProtegido] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [eu, setEu] = useState(null);
+  const [erro, setErro] = useState(false);
   useEffect(() => { aplicarTema(lerPref('mf2-tema', 'sistema')); }, []);
+  const verificar = useCallback(() => {
+    setErro(false);
+    get('/status').then((s) => { setStatus(s); setEu(linkDeAcesso() ? null : s.eu); }).catch(() => setErro(true));
+  }, []);
   useEffect(() => {
-    get('/status').then((s) => {
-      setProtegido(s.protegido);
-      if (!s.protegido) { sessao.token = 'aberto'; setEstado('ok'); }
-      else setEstado(sessao.token ? 'ok' : 'login');
-    }).catch(() => setEstado('ok'));
-    const sair = () => setEstado('login');
+    verificar();
+    const sair = () => setEu(null);
     window.addEventListener('mf2-sair', sair);
     return () => window.removeEventListener('mf2-sair', sair);
-  }, []);
-  if (estado === 'verificando') return <Carregando />;
-  if (estado === 'login') return <Login aoEntrar={() => setEstado('ok')} />;
-  return <ProvedorDados><Painel protegido={protegido} aoSair={() => { sessao.token = null; setEstado('login'); }} /></ProvedorDados>;
-}
-
-function Login({ aoEntrar }) {
-  const t = useT();
-  const [senha, setSenha] = useState('');
-  const [erro, setErro] = useState('');
-  const entrar = async (e) => {
-    e.preventDefault();
-    try { const r = await post('/login', { senha }); sessao.token = r.token; aoEntrar(); }
-    catch (err) { setErro(err.message); }
+  }, [verificar]);
+  const entrar = (u) => {
+    if (eu && String(eu._id) !== String(u._id)) limparDadosLocais();
+    try { if (localStorage.getItem('mf2-ultimo-usuario') !== String(u._id)) limparDadosLocais(); localStorage.setItem('mf2-ultimo-usuario', String(u._id)); } catch {}
+    setEu(u); setStatus((s) => ({ ...s, temUsuarios: true }));
+    if (!/^#[a-z]+$/.test(location.hash)) history.replaceState(null, '', '#visao');
   };
-  return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <form onSubmit={entrar} className="cartao w-full max-w-sm space-y-5 p-7">
-        <div className="text-center">
-          <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-marca text-sobre-marca"><Icone nome="rendimento" className="h-7 w-7" forte /></span>
-          <h1 className="mt-4 text-2xl">{t('app.nome')}</h1>
-        </div>
-        <input id="login-senha" type="password" className="campo" placeholder={t('login.senha')} value={senha} onChange={(e) => { setSenha(e.target.value); setErro(''); }} autoFocus />
-        {erro && <p className="text-sm font-semibold text-neg">{erro}</p>}
-        <button className="btn-primario w-full">{t('login.entrar')}</button>
-      </form>
+  const sair = async () => { try { await post('/auth/sair'); } catch {} limparDadosLocais(); setEu(null); };
+  if (erro) return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+      <p className="font-semibold">Sem conexão com o servidor.</p>
+      <button className="btn-primario" onClick={verificar}>Tentar de novo</button>
     </div>
   );
+  if (!status) return <Carregando />;
+  if (!eu) return <Acesso status={status} aoEntrar={entrar} />;
+  // key: trocar de conta recarrega tudo do zero
+  return <ProvedorDados key={eu._id}><Painel eu={eu} setEu={setEu} aoSair={sair} /></ProvedorDados>;
 }
 
-function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
+function Ajustes({ aberto, aoFechar, eu, setEu, aoSair }) {
   const t = useT();
   const avisar = useAviso();
   const { idioma, setIdioma } = useIdioma();
@@ -101,10 +101,18 @@ function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
   const mudarTema = (v) => { setTema(v); gravarPref('mf2-tema', v); aplicarTema(v); };
   const { diaInicioMes, salvarDiaInicio } = useDados();
   const [zerar, setZerar] = useState(false);
+  const [senha, setSenha] = useState(false);
+  const [usuarios, setUsuarios] = useState(false);
+  const [nome, setNome] = useState(eu.nome);
+  useEffect(() => { if (aberto) setNome(eu.nome); }, [aberto, eu.nome]);
+  const salvarNome = async () => {
+    if (!nome.trim() || nome.trim() === eu.nome) return;
+    try { setEu(await put('/auth/eu', { nome })); avisar(t('conta.nomeSalvo')); } catch (e) { avisar(e.message, 'erro'); }
+  };
 
   const exportar = async () => {
     try {
-      const r = await fetch('/api/exportar', { headers: sessao.token ? { authorization: `Bearer ${sessao.token}` } : {} });
+      const r = await fetch('/api/exportar', { credentials: 'same-origin' });
       if (!r.ok) throw new Error();
       const blob = await r.blob();
       const a = document.createElement('a');
@@ -116,6 +124,13 @@ function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
   return (
     <Modal titulo={t('ajustes.titulo')} aberto={aberto} aoFechar={aoFechar}>
       <div className="space-y-5">
+        <div className="flex items-center gap-3 rounded-2xl bg-sutil p-4">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-marca text-lg font-bold text-sobre-marca">{(eu.nome || '?').slice(0, 1).toUpperCase()}</span>
+          <div className="min-w-0 flex-1">
+            <input aria-label={t('acesso.nome')} className="w-full truncate rounded-lg bg-transparent px-1 font-bold outline-none focus:bg-cartao" value={nome} onChange={(e) => setNome(e.target.value)} onBlur={salvarNome} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+            <p className="truncate px-1 text-xs text-texto-3">{eu.email}</p>
+          </div>
+        </div>
         <div>
           <p className="rotulo mb-2">{t('ajustes.idioma')}</p>
           <Segmentado valor={idioma} aoMudar={setIdioma} opcoes={IDIOMAS.map((i) => [i.id, i.nome])} />
@@ -136,10 +151,18 @@ function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
             <button className="flex w-full items-center gap-3 rounded-2xl bg-sutil p-4 text-left text-sm font-semibold hover:bg-linha" onClick={exportar}>
               <Icone nome="download" /> <span className="flex-1">{t('app.backupDica')}</span>
             </button>
+            <button className="flex w-full items-center gap-3 rounded-2xl bg-sutil p-4 text-left text-sm font-semibold hover:bg-linha" onClick={() => setSenha(true)}>
+              <Icone nome="ajustes" /> <span className="flex-1">{t('conta.trocarSenha')}</span>
+            </button>
+            {eu.admin && (
+              <button className="flex w-full items-center gap-3 rounded-2xl bg-sutil p-4 text-left text-sm font-semibold hover:bg-linha" onClick={() => setUsuarios(true)}>
+                <Icone nome="grade" /> <span className="flex-1">{t('conta.usuarios')}</span>
+              </button>
+            )}
             <button className="flex w-full items-center gap-3 rounded-2xl p-4 text-left text-sm font-semibold text-neg hover:bg-neg-suave" onClick={() => setZerar(true)}>
               <Icone nome="lixo" /> <span className="flex-1">{t('zerar.botao')}</span>
             </button>
-            {protegido && (
+            {(
               <button className="flex w-full items-center gap-3 rounded-2xl p-4 text-left text-sm font-semibold text-neg hover:bg-neg-suave" onClick={aoSair}>
                 <Icone nome="sair" /> <span className="flex-1">{t('ajustes.sair')}</span>
               </button>
@@ -148,6 +171,8 @@ function Ajustes({ aberto, aoFechar, protegido, aoSair }) {
         )}
       </div>
       <ModalZerar aberto={zerar} aoFechar={() => setZerar(false)} exportar={exportar} />
+      <ModalSenha aberto={senha} aoFechar={() => setSenha(false)} />
+      {eu.admin && <ModalUsuarios aberto={usuarios} aoFechar={() => setUsuarios(false)} eu={eu} />}
     </Modal>
   );
 }
@@ -195,7 +220,7 @@ function ModalZerar({ aberto, aoFechar, exportar }) {
   );
 }
 
-function Painel({ protegido, aoSair }) {
+function Painel({ eu, setEu, aoSair }) {
   const t = useT();
   const avisar = useAviso();
   const { idioma } = useIdioma();
@@ -289,7 +314,7 @@ function Painel({ protegido, aoSair }) {
         </div>
       </nav>
 
-      <Ajustes aberto={ajustes} aoFechar={() => setAjustes(false)} protegido={protegido} aoSair={() => { setAjustes(false); aoSair(); }} />
+      <Ajustes aberto={ajustes} aoFechar={() => setAjustes(false)} eu={eu} setEu={setEu} aoSair={() => { setAjustes(false); aoSair(); }} />
     </div>
   );
 }

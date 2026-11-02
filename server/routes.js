@@ -17,6 +17,8 @@ import { obterTaxas, converter, conversorPorDia, taxasNaData } from './cambio.js
 import { lerTransacaoAtalho, categoriaDoComerciante, contaDoCartao } from './applepay.js';
 import { chaveRegra } from '../src/importacao.js';
 import { CATEGORIAS_PADRAO } from './padrao.js';
+import { exigirLogin } from './auth.js';
+import { usuarioAtual, semFiltro, comoUsuario } from './tenancy.js';
 
 const api = Router();
 
@@ -29,10 +31,11 @@ const intervaloDoMes = (mes) => {
   return { $gte: new Date(Date.UTC(y, m - 1, 1)), $lt: new Date(Date.UTC(y, m, 1)) };
 };
 // mês financeiro: o dia em que o mês começa (ex.: o dia do salário). Guardado em Config.
-let prefsCache = null;
+const prefsCache = new Map(); // por usuário
 export async function preferencias() {
-  if (!prefsCache) prefsCache = (await Config.findOne({ chave: 'preferencias' }).lean())?.valor || {};
-  return { diaInicioMes: diaValido(prefsCache.diaInicioMes || 1) };
+  const u = usuarioAtual();
+  if (!prefsCache.has(u)) prefsCache.set(u, (await Config.findOne({ chave: 'preferencias' }).lean())?.valor || {});
+  return { diaInicioMes: diaValido(prefsCache.get(u).diaInicioMes || 1) };
 }
 const intervaloFinanceiro = async (mes) => {
   const { inicio, fim } = periodoDoMes(mes, (await preferencias()).diaInicioMes);
@@ -41,27 +44,18 @@ const intervaloFinanceiro = async (mes) => {
 // `codigo` permite ao app mostrar a mensagem no idioma escolhido
 const erro = (res, status, mensagem, codigo = null, dados = undefined) => res.status(status).json({ erro: mensagem, codigo, dados });
 
-// ---------- autenticação simples por senha (APP_PASSWORD) ----------
-const SENHA = process.env.APP_PASSWORD || '';
-const SEGREDO = process.env.APP_SECRET || SENHA || 'dev';
-const tokenEsperado = () => crypto.createHmac('sha256', SEGREDO).update(`mf2:${SENHA}`).digest('hex');
-
-api.post('/login', (req, res) => {
-  if (!SENHA) return res.json({ token: 'aberto', protegido: false });
-  const enviado = String(req.body?.senha || '');
-  const ok = enviado.length === SENHA.length && crypto.timingSafeEqual(Buffer.from(enviado), Buffer.from(SENHA));
-  if (!ok) return erro(res, 401, 'Senha incorreta', 'senha_incorreta');
-  res.json({ token: tokenEsperado(), protegido: true });
-});
-
-api.get('/status', (_req, res) => res.json({ ok: true, protegido: Boolean(SENHA) }));
-
 // ---------- Apple Pay: a automação do Atalhos manda cada compra para cá (com a chave própria) ----------
 const lerConfigAtalho = async () => (await Config.findOne({ chave: 'atalho' }).lean())?.valor || {};
 const gravarConfigAtalho = (valor) => Config.updateOne({ chave: 'atalho' }, { $set: { valor } }, { upsert: true });
 api.post('/atalho/lancamento', wrap(async (req, res) => {
-  const cfg = await lerConfigAtalho();
+  // a chave diz de qual usuário é a compra
   const enviada = String(req.headers['x-chave'] || (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.body?.chave || '').trim();
+  const dono = enviada.length >= 20 ? await semFiltro(() => Config.findOne({ chave: 'atalho', 'valor.chave': enviada }, 'usuario').lean()) : null;
+  if (!dono?.usuario) return erro(res, 401, 'Chave do atalho inválida', 'chave_atalho');
+  return comoUsuario(dono.usuario, () => lancarAtalho(req, res, enviada));
+}));
+async function lancarAtalho(req, res, enviada) {
+  const cfg = await lerConfigAtalho();
   const ok = cfg.chave && enviada.length === cfg.chave.length && crypto.timingSafeEqual(Buffer.from(enviada), Buffer.from(cfg.chave));
   if (!ok) return erro(res, 401, 'Chave do atalho inválida', 'chave_atalho');
   const tr = lerTransacaoAtalho(req.body || {});
@@ -92,14 +86,10 @@ api.post('/atalho/lancamento', wrap(async (req, res) => {
   await registrar({ ok: true, descricao, valor: tr.valor, moeda, categoria: cat?.nome || null, lancamento: l._id });
   // texto curto que o Atalhos pode mostrar numa notificação
   res.status(201).json({ ok: true, texto: `${tr.valor.toFixed(2)} ${moeda} · ${descricao}${cat ? ` → ${cat.nome}` : ''}` });
-}));
+}
 
-api.use((req, res, next) => {
-  if (!SENHA) return next();
-  const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (t && t.length === 64 && crypto.timingSafeEqual(Buffer.from(t), Buffer.from(tokenEsperado()))) return next();
-  erro(res, 401, 'Não autorizado', 'nao_autorizado');
-});
+// daqui para baixo: só com login, e cada um vê só os seus dados
+api.use(exigirLogin);
 
 // ---------- recorrentes: gera os lançamentos devidos ----------
 export async function gerarRecorrentes(hoje = new Date()) {
@@ -131,10 +121,11 @@ export async function gerarRecorrentes(hoje = new Date()) {
 }
 
 /** Depósitos automáticos mensais nas metas/poupança (como as recorrências, um por mês) */
-let gerandoDepositos = null;
+const gerandoDepositos = new Map(); // por usuário
 async function gerarDepositosAutomaticos(hoje = new Date()) {
-  if (gerandoDepositos) return gerandoDepositos; // evita duplicar com requisições ao mesmo tempo
-  gerandoDepositos = (async () => {
+  const u = usuarioAtual();
+  if (gerandoDepositos.has(u)) return gerandoDepositos.get(u); // evita duplicar com requisições ao mesmo tempo
+  const p = (async () => {
     const metas = await Meta.find({ 'mensal.valor': { $gt: 0 }, arquivada: false }).lean();
     for (const meta of metas) {
       const existentes = await ContribuicaoMeta.find({ meta: meta._id, automatica: true }, 'automatica competencia').lean();
@@ -167,23 +158,24 @@ async function gerarDepositosAutomaticos(hoje = new Date()) {
       }
       if (apagar.length) await ContribuicaoMeta.deleteMany({ _id: { $in: apagar } });
     }
-  })().finally(() => { gerandoDepositos = null; });
-  return gerandoDepositos;
+  })().finally(() => { gerandoDepositos.delete(u); });
+  gerandoDepositos.set(u, p);
+  return p;
 }
 
 /**
  * A poupança separada foi retirada do app: a que existir vazia é apagada; com dinheiro,
  * vira uma meta comum (nada se perde).
  */
-let poupancaRevisada = false;
+const poupancaRevisada = new Set(); // por usuário
 async function garantirPoupanca() {
-  if (poupancaRevisada) return;
+  if (poupancaRevisada.has(usuarioAtual())) return;
   for (const p of await Meta.find({ tipo: 'poupanca' }).lean()) {
     const usada = await ContribuicaoMeta.exists({ meta: p._id }) || p.regraSalario?.ativo || p.mensal?.valor > 0;
     if (usada) await Meta.updateOne({ _id: p._id }, { tipo: 'meta' });
     else { await Lancamento.updateMany({ meta: p._id }, { meta: null }); await Meta.deleteOne({ _id: p._id }); }
   }
-  poupancaRevisada = true;
+  poupancaRevisada.add(usuarioAtual());
 }
 
 // ---------- gasto pago com dinheiro guardado (poupança ou meta) ----------
@@ -358,7 +350,7 @@ api.put('/preferencias', wrap(async (req, res) => {
   const atual = (await Config.findOne({ chave: 'preferencias' }).lean())?.valor || {};
   if (req.body?.diaInicioMes !== undefined) atual.diaInicioMes = diaValido(req.body.diaInicioMes);
   await Config.updateOne({ chave: 'preferencias' }, { $set: { valor: atual } }, { upsert: true });
-  prefsCache = null;
+  prefsCache.delete(usuarioAtual());
   res.json(await preferencias());
 }));
 

@@ -27,6 +27,7 @@ class Erro extends Error { constructor(status, msg, codigo = null, dados) { supe
 
 const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [], metas: [], contribuicoes: [], regras: [], carteira: [], viagens: [], reservasViagem: [] };
 let atalho = {};
+const demoUsuario = { _id: 'demo', nome: 'Demonstração', email: 'demo@exemplo.com', admin: true };
 let prefs = { diaInicioMes: 28 }; // na demonstração, o salário cai no dia 28
 const mesFin = (d) => mesFinanceiro(d, prefs.diaInicioMes);
 
@@ -493,7 +494,11 @@ function rotear(method, path, q, body) {
   const [a, id, sub] = p;
   const M = method;
 
-  if (a === 'status') return { ok: true, protegido: false };
+  if (a === 'status') return { ok: true, temUsuarios: true, eu: demoUsuario, emailConfigurado: false };
+  if (a === 'auth' && id === 'eu' && M === 'PUT') { demoUsuario.nome = String(body?.nome || demoUsuario.nome).slice(0, 80); return demoUsuario; }
+  if (a === 'auth' && id === 'eu') return demoUsuario;
+  if (a === 'auth') return { ok: true, eu: demoUsuario };
+  if (a === 'admin') return { usuarios: [{ ...demoUsuario, ativo: true }], convites: [], emailConfigurado: false, link: 'https://seu-app.up.railway.app/#convite=demo' };
   if (a === 'atalho') return rotaAtalho(M, id, body);
   if (a === 'preferencias') { if (M === 'PUT' && body.diaInicioMes !== undefined) prefs.diaInicioMes = diaValido(body.diaInicioMes); return { diaInicioMes: prefs.diaInicioMes }; }
   if (a === 'distribuicao' && M === 'PUT') { (body.ids || []).forEach((mid, i) => { const m = db.metas.find((x) => x._id === mid); if (m?.regraSalario) m.regraSalario.ordem = i; }); gerarRecorrentes(); return { ok: true }; }
@@ -509,7 +514,6 @@ function rotear(method, path, q, body) {
     return { salario: ultimo ? { valor: ultimo.valor, moeda: ultimo.moeda, data: ultimo.data, descricao: ultimo.descricao } : null, exemplo,
       regras: ordem.map((m, i) => ({ _id: m._id, nome: m.nome, icone: m.icone, cor: m.cor, moeda: m.moeda, regra: m.regraSalario, ...partes[i] })), total, livre, mensais, totalMensais, sobra: round2(livre - totalMensais) };
   }
-  if (a === 'login') return { token: 'aberto', protegido: false };
   if (a === 'cambio') return { taxas: TAXAS, fonte: 'reserva' };
   if (a === 'resumo') return resumo(q);
 

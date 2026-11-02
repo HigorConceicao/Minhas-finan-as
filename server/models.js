@@ -1,12 +1,15 @@
 import mongoose from 'mongoose';
+import { pluginUsuario } from './tenancy.js';
 
 const { Schema, model } = mongoose;
 const MOEDAS = ['EUR', 'BRL', 'USD'];
 const opts = { timestamps: true, versionKey: false };
+// todo dado pertence a um usuário (ver tenancy.js)
+const escopado = (def, o) => { const sc = new Schema(def, o); sc.plugin(pluginUsuario); return sc; };
 
 export const Categoria = model(
   'Categoria',
-  new Schema(
+  escopado(
     {
       nome: { type: String, required: true, trim: true },
       tipo: { type: String, enum: ['despesa', 'receita'], default: 'despesa' },
@@ -23,7 +26,7 @@ export const Categoria = model(
 
 export const Lancamento = model(
   'Lancamento',
-  new Schema(
+  escopado(
     {
       tipo: { type: String, enum: ['despesa', 'receita', 'transferencia'], required: true },
       descricao: { type: String, required: true, trim: true },
@@ -56,12 +59,12 @@ export const Lancamento = model(
     opts
   )
     .index({ recorrente: 1, competencia: 1 }, { unique: true, partialFilterExpression: { recorrente: { $type: 'objectId' } } })
-    .index({ importId: 1 }, { unique: true, partialFilterExpression: { importId: { $type: 'string' } } })
+    .index({ usuario: 1, importId: 1 }, { unique: true, partialFilterExpression: { importId: { $type: 'string' } } })
 );
 
 export const Conta = model(
   'Conta',
-  new Schema(
+  escopado(
     {
       nome: { type: String, required: true, trim: true },
       tipo: { type: String, enum: ['corrente', 'dinheiro', 'investimento', 'divida', 'cartao'], default: 'corrente' },
@@ -83,7 +86,7 @@ export const Conta = model(
 
 export const Viagem = model(
   'Viagem',
-  new Schema(
+  escopado(
     {
       nome: { type: String, required: true, trim: true },
       icone: { type: String, default: '✈️' },
@@ -101,22 +104,22 @@ export const Viagem = model(
 // notificações no celular (Web Push)
 export const InscricaoPush = model(
   'InscricaoPush',
-  new Schema(
+  escopado(
     {
-      endpoint: { type: String, required: true, unique: true },
+      endpoint: { type: String, required: true },
       keys: { p256dh: String, auth: String },
       idioma: { type: String, default: 'pt' },
       dias: { type: Number, default: 2 }, // avisar X dias antes do vencimento
     },
     opts
-  )
+  ).index({ usuario: 1, endpoint: 1 }, { unique: true })
 );
-export const LembreteEnviado = model('LembreteEnviado', new Schema({ chave: { type: String, required: true, unique: true } }, opts));
-export const Config = model('Config', new Schema({ chave: { type: String, required: true, unique: true }, valor: Schema.Types.Mixed }, opts));
+export const LembreteEnviado = model('LembreteEnviado', escopado({ chave: { type: String, required: true } }, opts).index({ usuario: 1, chave: 1 }, { unique: true }));
+export const Config = model('Config', escopado({ chave: { type: String, required: true }, valor: Schema.Types.Mixed }, opts).index({ usuario: 1, chave: 1 }, { unique: true }));
 
 export const Meta = model(
   'Meta',
-  new Schema(
+  escopado(
     {
       nome: { type: String, required: true, trim: true },
       icone: { type: String, default: '🎯' },
@@ -155,7 +158,7 @@ export const Meta = model(
 
 export const ContribuicaoMeta = model(
   'ContribuicaoMeta',
-  new Schema(
+  escopado(
     {
       meta: { type: Schema.Types.ObjectId, ref: 'Meta', required: true, index: true },
       valor: { type: Number, required: true }, // negativo = retirada
@@ -184,7 +187,7 @@ export const ContribuicaoMeta = model(
 // dinheiro separado de uma conta para gastar numa viagem (negativo = devolvido à conta)
 export const ReservaViagem = model(
   'ReservaViagem',
-  new Schema(
+  escopado(
     {
       viagem: { type: Schema.Types.ObjectId, ref: 'Viagem', required: true, index: true },
       // de onde veio: uma conta (inclusive cartão), uma meta/poupança, ou nenhuma = saldo do mês
@@ -202,18 +205,18 @@ export const ReservaViagem = model(
 // "quando o extrato disser X, use a categoria Y" — aprendido nas importações
 export const RegraCategoria = model(
   'RegraCategoria',
-  new Schema(
+  escopado(
     {
-      texto: { type: String, required: true, unique: true, trim: true, lowercase: true },
+      texto: { type: String, required: true, trim: true, lowercase: true },
       categoria: { type: Schema.Types.ObjectId, ref: 'Categoria', required: true },
     },
     opts
-  )
+  ).index({ usuario: 1, texto: 1 }, { unique: true })
 );
 
 export const Recorrente = model(
   'Recorrente',
-  new Schema(
+  escopado(
     {
       tipo: { type: String, enum: ['despesa', 'receita'], required: true },
       descricao: { type: String, required: true, trim: true },
@@ -235,7 +238,7 @@ export const Recorrente = model(
 
 export const ContaRendimento = model(
   'ContaRendimento',
-  new Schema(
+  escopado(
     {
       nome: { type: String, required: true, trim: true },
       instituicao: { type: String, default: '' },
@@ -256,7 +259,7 @@ export const ContaRendimento = model(
 
 export const Movimento = model(
   'Movimento',
-  new Schema(
+  escopado(
     {
       conta: { type: Schema.Types.ObjectId, ref: 'ContaRendimento', required: true, index: true },
       tipo: { type: String, enum: ['rendimento', 'aporte', 'resgate', 'imposto', 'taxa'], required: true },
@@ -270,3 +273,41 @@ export const Movimento = model(
 );
 
 export const MOEDAS_ACEITAS = MOEDAS;
+
+// ---------- usuários e acesso (não pertencem a um usuário: sem filtro) ----------
+export const Usuario = model(
+  'Usuario',
+  new Schema(
+    {
+      nome: { type: String, required: true, trim: true, maxlength: 80 },
+      email: { type: String, required: true, unique: true, trim: true, lowercase: true, maxlength: 200 },
+      senhaHash: { type: String, required: true },
+      admin: { type: Boolean, default: false },
+      ativo: { type: Boolean, default: true },
+      // muda a cada troca de senha: derruba as sessões abertas em outros aparelhos
+      versaoSessao: { type: Number, default: 1 },
+      ultimoAcesso: { type: Date, default: null },
+    },
+    opts
+  )
+);
+
+// convites (cadastro) e redefinição de senha: guardamos só o hash do token
+export const TokenAcesso = model(
+  'TokenAcesso',
+  new Schema(
+    {
+      tipo: { type: String, enum: ['convite', 'senha'], required: true },
+      hash: { type: String, required: true, unique: true },
+      usuario: { type: Schema.Types.ObjectId, ref: 'Usuario', default: null }, // senha: de quem
+      email: { type: String, default: '', lowercase: true, trim: true }, // convite: para quem (opcional)
+      criadoPor: { type: Schema.Types.ObjectId, ref: 'Usuario', default: null },
+      expira: { type: Date, required: true },
+      usado: { type: Date, default: null },
+    },
+    opts
+  )
+);
+
+// dados do sistema (segredo das sessões, chaves de notificação)
+export const Sistema = model('Sistema', new Schema({ chave: { type: String, required: true, unique: true }, valor: Schema.Types.Mixed }, opts));

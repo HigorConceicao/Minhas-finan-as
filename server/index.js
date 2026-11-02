@@ -4,12 +4,11 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import api from './routes.js';
-import { Categoria } from './models.js';
+import auth, { prepararBanco } from './auth.js';
 import { iniciarLembretes } from './lembretes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
-import { CATEGORIAS_PADRAO } from './padrao.js';
 
 
 async function conectar() {
@@ -27,14 +26,26 @@ async function conectar() {
     console.warn('⚠️  MONGODB_URI não definida — usando banco em memória (dados temporários).');
   }
   await mongoose.connect(uri);
-  if ((await Categoria.countDocuments()) === 0) {
-    await Categoria.insertMany(CATEGORIAS_PADRAO.map((c) => ({ tipo: 'despesa', ...c })));
-  }
+  await prepararBanco(); // índices por usuário (as categorias padrão são criadas com cada conta)
 }
 
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1); // Railway: HTTPS no proxy (cookies seguros, IP certo para o limite de tentativas)
+app.use((_req, res, next) => {
+  res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' });
+  next();
+});
 app.use(express.json({ limit: '5mb' }));
+// pedidos que mudam dados precisam vir como JSON (barra formulários de outros sites)
+app.use('/api', (req, res, next) => {
+  const temCorpo = Number(req.headers['content-length']) > 0 || !!req.headers['transfer-encoding'];
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && temCorpo && !req.is('application/json')) {
+    return res.status(415).json({ erro: 'Use JSON', codigo: 'dados_invalidos' });
+  }
+  next();
+});
+app.use('/api', auth);
 app.use('/api', api);
 
 // erros da API

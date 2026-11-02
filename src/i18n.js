@@ -841,6 +841,77 @@ Object.assign(pt.erro, { guardado_negativo: 'Não dá para apagar: esse dinheiro
 Object.assign(de.erro, { guardado_negativo: 'Löschen nicht möglich: Das Geld wurde schon verwendet (der Stand würde negativ). Lösche zuerst die Entnahme oder Ausgabe.' });
 Object.assign(en.erro, { guardado_negativo: 'Can’t delete: that money was already used (the balance would go negative). Delete the withdrawal or expense first.' });
 
+
+pt.acesso = {
+  entrarSub: 'Entre na sua conta', email: 'E-mail', senha: 'Senha', nome: 'Seu nome', mostrar: 'Mostrar', ocultar: 'Ocultar', minimo: 'Pelo menos 8 caracteres.',
+  repetir: 'Repita a senha', naoConferem: 'As senhas não conferem.', esqueci: 'Esqueci minha senha', voltar: 'Voltar para o login',
+  esqueciTitulo: 'Recuperar senha', esqueciSub: 'Informe seu e-mail. Se ele tiver uma conta, enviamos um link para criar uma senha nova.', enviarLink: 'Enviar link',
+  esqueciEnviado: 'Se existir uma conta com {e}, o link chega em instantes.', esqueciDica: 'Veja também a caixa de spam. O link vale por 1 hora. Se não chegar, peça ao administrador um link de nova senha.',
+  redefinirTitulo: 'Criar nova senha', novaSenha: 'Nova senha', salvarEntrar: 'Salvar e entrar', pedirOutro: 'Pedir outro link',
+  conviteTitulo: 'Criar sua conta', conviteSub: 'Você foi convidado. Suas finanças ficam só na sua conta.', criarConta: 'Criar conta', jaTenho: 'Já tenho conta',
+  primeiroTitulo: 'Bem-vindo!', primeiroSub: 'Crie a conta de administrador. Os dados que já estão no app passam a ser dela.', senhaApp: 'Senha atual do app (APP_PASSWORD)',
+  primeiroDica: 'Depois você convida outras pessoas em Ajustes → Usuários.',
+};
+de.acesso = {
+  entrarSub: 'Melde dich an', email: 'E-Mail', senha: 'Passwort', nome: 'Dein Name', mostrar: 'Zeigen', ocultar: 'Verbergen', minimo: 'Mindestens 8 Zeichen.',
+  repetir: 'Passwort wiederholen', naoConferem: 'Die Passwörter stimmen nicht überein.', esqueci: 'Passwort vergessen', voltar: 'Zurück zur Anmeldung',
+  esqueciTitulo: 'Passwort zurücksetzen', esqueciSub: 'Gib deine E-Mail ein. Wenn es ein Konto gibt, schicken wir einen Link für ein neues Passwort.', enviarLink: 'Link senden',
+  esqueciEnviado: 'Wenn es ein Konto mit {e} gibt, kommt der Link gleich an.', esqueciDica: 'Schau auch im Spam nach. Der Link gilt 1 Stunde. Kommt nichts an, bitte den Administrator um einen Link.',
+  redefinirTitulo: 'Neues Passwort', novaSenha: 'Neues Passwort', salvarEntrar: 'Speichern und anmelden', pedirOutro: 'Neuen Link anfordern',
+  conviteTitulo: 'Konto erstellen', conviteSub: 'Du wurdest eingeladen. Deine Finanzen bleiben in deinem Konto.', criarConta: 'Konto erstellen', jaTenho: 'Ich habe schon ein Konto',
+  primeiroTitulo: 'Willkommen!', primeiroSub: 'Erstelle das Administratorkonto. Die vorhandenen Daten gehören dann zu diesem Konto.', senhaApp: 'Bisheriges App-Passwort (APP_PASSWORD)',
+  primeiroDica: 'Weitere Personen lädst du danach unter Einstellungen → Benutzer ein.',
+};
+en.acesso = {
+  entrarSub: 'Sign in to your account', email: 'Email', senha: 'Password', nome: 'Your name', mostrar: 'Show', ocultar: 'Hide', minimo: 'At least 8 characters.',
+  repetir: 'Repeat password', naoConferem: 'The passwords don’t match.', esqueci: 'Forgot my password', voltar: 'Back to sign in',
+  esqueciTitulo: 'Reset password', esqueciSub: 'Enter your email. If it has an account, we’ll send a link to set a new password.', enviarLink: 'Send link',
+  esqueciEnviado: 'If there is an account for {e}, the link will arrive shortly.', esqueciDica: 'Check your spam folder too. The link is valid for 1 hour. If nothing arrives, ask the administrator for a link.',
+  redefinirTitulo: 'New password', novaSenha: 'New password', salvarEntrar: 'Save and sign in', pedirOutro: 'Request another link',
+  conviteTitulo: 'Create your account', conviteSub: 'You’ve been invited. Your finances stay in your own account.', criarConta: 'Create account', jaTenho: 'I already have an account',
+  primeiroTitulo: 'Welcome!', primeiroSub: 'Create the administrator account. The data already in the app will belong to it.', senhaApp: 'Current app password (APP_PASSWORD)',
+  primeiroDica: 'Afterwards, invite others under Settings → Users.',
+};
+pt.conta = {
+  trocarSenha: 'Trocar senha', senhaAtual: 'Senha atual', senhaTrocada: 'Senha trocada', senhaDica: 'Os outros aparelhos onde você estiver logado vão sair.', nomeSalvo: 'Nome salvo',
+  usuarios: 'Usuários e convites', convidar: 'Convidar alguém', emailOpcional: 'E-mail (opcional)', gerar: 'Convidar',
+  conviteDica: 'Com e-mail, o convite é enviado. Você também recebe o link para mandar por WhatsApp.', conviteDicaSemEmail: 'Gere o link e mande por WhatsApp ou mensagem (o envio por e-mail ainda não está configurado).',
+  conviteEnviado: 'Convite enviado para {e}. Link, se quiser mandar também:', conviteLink: 'Mande este link para a pessoa:', linkSenha: 'Link de nova senha para {n}:',
+  linkValidade: 'Vale uma vez. Convite: 7 dias; nova senha: 24 horas.', contas: 'Contas', admin: 'admin', desativada: 'desativada', ultimoAcesso: 'último acesso {d}',
+  novaSenha: 'Link de senha', desativar: 'Desativar', reativar: 'Reativar', convitesAbertos: 'Convites em aberto', semEmail: 'Sem e-mail', expira: 'vale até {d}',
+  privacidade: 'Cada pessoa vê só os próprios dados. Nem o administrador vê as finanças dos outros pelo app.',
+};
+de.conta = {
+  trocarSenha: 'Passwort ändern', senhaAtual: 'Aktuelles Passwort', senhaTrocada: 'Passwort geändert', senhaDica: 'Auf anderen Geräten wirst du abgemeldet.', nomeSalvo: 'Name gespeichert',
+  usuarios: 'Benutzer und Einladungen', convidar: 'Jemanden einladen', emailOpcional: 'E-Mail (optional)', gerar: 'Einladen',
+  conviteDica: 'Mit E-Mail wird die Einladung verschickt. Du bekommst auch den Link für WhatsApp.', conviteDicaSemEmail: 'Erzeuge den Link und schick ihn per WhatsApp (E-Mail-Versand ist noch nicht eingerichtet).',
+  conviteEnviado: 'Einladung an {e} gesendet. Link, falls du ihn auch schicken willst:', conviteLink: 'Schick diesen Link an die Person:', linkSenha: 'Link für neues Passwort für {n}:',
+  linkValidade: 'Einmal gültig. Einladung: 7 Tage; Passwort: 24 Stunden.', contas: 'Konten', admin: 'Admin', desativada: 'deaktiviert', ultimoAcesso: 'zuletzt {d}',
+  novaSenha: 'Passwort-Link', desativar: 'Deaktivieren', reativar: 'Reaktivieren', convitesAbertos: 'Offene Einladungen', semEmail: 'Ohne E-Mail', expira: 'gültig bis {d}',
+  privacidade: 'Jede Person sieht nur die eigenen Daten. Auch der Administrator sieht in der App keine fremden Finanzen.',
+};
+en.conta = {
+  trocarSenha: 'Change password', senhaAtual: 'Current password', senhaTrocada: 'Password changed', senhaDica: 'You’ll be signed out on your other devices.', nomeSalvo: 'Name saved',
+  usuarios: 'Users and invites', convidar: 'Invite someone', emailOpcional: 'Email (optional)', gerar: 'Invite',
+  conviteDica: 'With an email, the invite is sent. You also get the link to share via WhatsApp.', conviteDicaSemEmail: 'Create the link and send it by WhatsApp or message (email sending isn’t set up yet).',
+  conviteEnviado: 'Invite sent to {e}. Link, if you want to share it too:', conviteLink: 'Send this link to the person:', linkSenha: 'New password link for {n}:',
+  linkValidade: 'Works once. Invite: 7 days; password: 24 hours.', contas: 'Accounts', admin: 'admin', desativada: 'disabled', ultimoAcesso: 'last seen {d}',
+  novaSenha: 'Password link', desativar: 'Disable', reativar: 'Enable', convitesAbertos: 'Open invites', semEmail: 'No email', expira: 'valid until {d}',
+  privacidade: 'Each person only sees their own data. Not even the administrator sees others’ finances in the app.',
+};
+Object.assign(pt.erro, { login_invalido: 'E-mail ou senha incorretos.', muitas_tentativas: 'Muitas tentativas. Espere 15 minutos e tente de novo.', senha_curta: 'A senha precisa ter pelo menos 8 caracteres.',
+  convite_invalido: 'Este convite não vale mais (expirou ou já foi usado).', link_invalido: 'Este link não vale mais (expirou ou já foi usado).', email_em_uso: 'Este e-mail já tem uma conta.',
+  senha_app_incorreta: 'Senha do app incorreta.', ja_configurado: 'O app já tem uma conta. Entre com ela.', senha_atual_incorreta: 'Senha atual incorreta.', so_admin: 'Só o administrador pode fazer isso.',
+  propria_conta: 'Não dá para mudar a própria conta aqui.', nao_autorizado: 'Sua sessão terminou. Entre de novo.' });
+Object.assign(de.erro, { login_invalido: 'E-Mail oder Passwort falsch.', muitas_tentativas: 'Zu viele Versuche. Warte 15 Minuten.', senha_curta: 'Das Passwort braucht mindestens 8 Zeichen.',
+  convite_invalido: 'Diese Einladung gilt nicht mehr (abgelaufen oder benutzt).', link_invalido: 'Dieser Link gilt nicht mehr (abgelaufen oder benutzt).', email_em_uso: 'Diese E-Mail hat schon ein Konto.',
+  senha_app_incorreta: 'App-Passwort falsch.', ja_configurado: 'Es gibt schon ein Konto. Melde dich an.', senha_atual_incorreta: 'Aktuelles Passwort falsch.', so_admin: 'Nur der Administrator darf das.',
+  propria_conta: 'Das eigene Konto lässt sich hier nicht ändern.', nao_autorizado: 'Deine Sitzung ist abgelaufen. Melde dich neu an.' });
+Object.assign(en.erro, { login_invalido: 'Wrong email or password.', muitas_tentativas: 'Too many attempts. Wait 15 minutes and try again.', senha_curta: 'The password needs at least 8 characters.',
+  convite_invalido: 'This invite is no longer valid (expired or used).', link_invalido: 'This link is no longer valid (expired or used).', email_em_uso: 'This email already has an account.',
+  senha_app_incorreta: 'Wrong app password.', ja_configurado: 'The app already has an account. Sign in.', senha_atual_incorreta: 'Wrong current password.', so_admin: 'Only the administrator can do this.',
+  propria_conta: 'You can’t change your own account here.', nao_autorizado: 'Your session ended. Sign in again.' });
+
 const DICS = { pt, de, en };
 
 const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };

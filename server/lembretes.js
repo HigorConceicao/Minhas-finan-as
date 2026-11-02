@@ -1,7 +1,8 @@
 // Notificações no celular (Web Push): contas a vencer, faturas e orçamento acima do alerta.
 // Funciona no iPhone com o app instalado na tela de início (iOS 16.4 ou mais novo).
 import webpush from 'web-push';
-import { Config, InscricaoPush, LembreteEnviado, Recorrente, Conta, Lancamento, Categoria, ReservaViagem, Viagem } from './models.js';
+import { Config, InscricaoPush, LembreteEnviado, Recorrente, Conta, Lancamento, Categoria, ReservaViagem, Viagem, Sistema } from './models.js';
+import { semFiltro, comoUsuario, usuarioAtual } from './tenancy.js';
 import { lembretes, movimentosSeparados } from './contas.js';
 import { mesDe, round2, periodoDoMes, mesFinanceiro, diaValido } from './finance.js';
 import { obterTaxas, converter } from './cambio.js';
@@ -15,13 +16,11 @@ async function configurar() {
   pronto = (async () => {
     let pub = process.env.VAPID_PUBLIC_KEY, priv = process.env.VAPID_PRIVATE_KEY;
     if (!pub || !priv) {
-      const salvo = await Config.findOne({ chave: 'vapid' }).lean();
-      if (salvo?.valor?.publicKey) ({ publicKey: pub, privateKey: priv } = salvo.valor);
-      else {
-        const novas = webpush.generateVAPIDKeys();
-        await Config.updateOne({ chave: 'vapid' }, { $set: { valor: novas } }, { upsert: true });
-        ({ publicKey: pub, privateKey: priv } = novas);
-      }
+      // chaves do sistema (iguais para todos); as de versões antigas estavam em Config
+      const salvo = (await Sistema.findOne({ chave: 'vapid' }).lean()) || (await semFiltro(() => Config.findOne({ chave: 'vapid' }).lean()));
+      const valor = salvo?.valor?.publicKey ? salvo.valor : webpush.generateVAPIDKeys();
+      await Sistema.updateOne({ chave: 'vapid' }, { $setOnInsert: { valor } }, { upsert: true });
+      ({ publicKey: pub, privateKey: priv } = (await Sistema.findOne({ chave: 'vapid' }).lean()).valor);
     }
     webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:financas@example.com', pub, priv);
     return pub;
@@ -33,6 +32,9 @@ export const chavePublica = () => configurar();
 
 export async function inscrever(inscricao, { idioma = 'pt', dias = 2 } = {}) {
   if (!inscricao?.endpoint || !inscricao?.keys?.p256dh || !inscricao?.keys?.auth) return false;
+  // aparelho que passou para outra conta: deixa de receber os avisos da anterior
+  const eu = usuarioAtual();
+  await semFiltro(() => InscricaoPush.deleteMany({ endpoint: inscricao.endpoint, usuario: { $ne: eu } }));
   await InscricaoPush.updateOne(
     { endpoint: inscricao.endpoint },
     { $set: { keys: inscricao.keys, idioma: ['pt', 'de', 'en'].includes(idioma) ? idioma : 'pt', dias: Math.min(7, Math.max(0, Number(dias) || 2)) } },
@@ -96,10 +98,18 @@ const diasAte = (iso) => {
 
 /** Verifica e envia o que estiver pendente. Roda de tempos em tempos (só entre 8h e 21h). */
 export async function verificarLembretes({ forcar = false } = {}) {
-  const inscricoes = await InscricaoPush.find().lean();
-  if (!inscricoes.length) return 0;
   const h = horaLocal();
   if (!forcar && (h < 8 || h > 21)) return 0;
+  // cada usuário com aparelhos inscritos, um de cada vez, só com os próprios dados
+  const usuarios = (await semFiltro(() => InscricaoPush.distinct('usuario'))).filter(Boolean);
+  let total = 0;
+  for (const u of usuarios) total += await comoUsuario(u, () => verificarDoUsuario());
+  return total;
+}
+
+async function verificarDoUsuario() {
+  const inscricoes = await InscricaoPush.find().lean();
+  if (!inscricoes.length) return 0;
   await configurar();
 
   const hoje = new Date();

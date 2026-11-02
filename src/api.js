@@ -1,13 +1,8 @@
 import { traduzir } from './i18n.js';
 import { dinheiro } from './fmt.js';
 
-const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-const gravar = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
-
-export const sessao = {
-  get token() { return ler('mf2-token'); },
-  set token(v) { gravar('mf2-token', v); },
-};
+// a sessão fica num cookie seguro (HttpOnly) que o navegador manda sozinho; o app nunca vê o segredo
+try { localStorage.removeItem('mf2-token'); } catch {} // token das versões antigas
 
 export class ErroApi extends Error {
   constructor(status, mensagem, codigo) { super(mensagem); this.status = status; this.codigo = codigo; }
@@ -27,12 +22,9 @@ function mensagem(dados, status) {
 
 export async function api(caminho, { method = 'GET', body } = {}) {
   const headers = { 'content-type': 'application/json' };
-  if (sessao.token) headers.authorization = `Bearer ${sessao.token}`;
-  const r = await fetch(`/api${caminho}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-  if (r.status === 401 && caminho !== '/login') {
-    sessao.token = null;
-    window.dispatchEvent(new Event('mf2-sair'));
-  }
+  const r = await fetch(`/api${caminho}`, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) });
+  // sessão expirou ou foi encerrada: volta para o login (as telas de acesso tratam o próprio erro)
+  if (r.status === 401 && !caminho.startsWith('/auth/') && caminho !== '/status') window.dispatchEvent(new Event('mf2-sair'));
   if (r.status === 204) return null;
   const dados = await r.json().catch(() => null);
   if (!r.ok) throw new ErroApi(r.status, mensagem(dados, r.status), dados?.codigo);
