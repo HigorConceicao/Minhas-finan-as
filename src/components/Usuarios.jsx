@@ -49,8 +49,9 @@ export function ModalUsuarios({ aberto, aoFechar, eu }) {
   const convidar = async (e) => {
     e.preventDefault();
     try {
-      const r = await post('/admin/convites', { email: email.trim(), enviar: !!email.trim(), idioma });
-      setLink({ texto: r.enviado ? t('conta.conviteEnviado', { e: email.trim() }) : t('conta.conviteLink'), link: r.link });
+      const e = email.trim();
+      const r = await post('/admin/convites', { email: e, enviar: !!e, idioma });
+      setLink({ texto: r.enviado ? t('conta.conviteEnviado', { e }) : t(e && d.emailConfigurado ? 'conta.conviteFalhou' : 'conta.conviteLink'), link: r.link });
       setEmail(''); await carregar();
     } catch (err) { avisar(err.message, 'erro'); }
   };

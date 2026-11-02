@@ -1,12 +1,16 @@
-// Envio de e-mails (recuperação de senha e convites) pelo Gmail com "senha de app".
-// Variáveis no Railway: GMAIL_USER (ex.: minhasfinancas.app@gmail.com) e GMAIL_APP_PASSWORD (16 letras).
+// Envio de e-mails (recuperação de senha e convites).
+// Preferência: Brevo (API HTTP, porta 443 — funciona no Railway Hobby, que bloqueia SMTP).
+//   Variáveis: BREVO_API_KEY e EMAIL_REMETENTE (o e-mail verificado como remetente no Brevo).
+// Alternativa: Gmail por SMTP (GMAIL_USER + GMAIL_APP_PASSWORD) — só funciona onde a porta SMTP é liberada.
 import nodemailer from 'nodemailer';
 
-const USUARIO = process.env.GMAIL_USER || '';
+const BREVO = (process.env.BREVO_API_KEY || '').trim();
+const GMAIL = process.env.GMAIL_USER || '';
 const SENHA = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+const REMETENTE = (process.env.EMAIL_REMETENTE || GMAIL).trim();
 let transporte = null;
 
-export const emailConfigurado = () => !!(USUARIO && SENHA);
+export const emailConfigurado = () => !!((BREVO && REMETENTE) || (GMAIL && SENHA));
 
 const escapar = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -25,9 +29,26 @@ const TEXTOS = {
   },
 };
 
+async function viaBrevo({ para, assunto, html, texto }) {
+  const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': BREVO, 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ sender: { name: 'Minhas Finanças', email: REMETENTE }, to: [{ email: para }], subject: assunto, htmlContent: html, textContent: texto }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!r.ok) throw new Error(`Brevo ${r.status}: ${(await r.text()).slice(0, 300)}`);
+}
+
+async function viaGmail({ para, assunto, html, texto }) {
+  if (!transporte) transporte = nodemailer.createTransport({
+    service: 'gmail', auth: { user: GMAIL, pass: SENHA },
+    connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
+  });
+  await transporte.sendMail({ from: `"Minhas Finanças" <${GMAIL}>`, to: para, subject: assunto, text: texto, html });
+}
+
 export async function enviarEmail({ para, idioma = 'pt', modelo, dados }) {
-  if (!emailConfigurado()) { console.warn(`E-mail não configurado (GMAIL_USER/GMAIL_APP_PASSWORD): não enviado para ${para}`); return false; }
-  if (!transporte) transporte = nodemailer.createTransport({ service: 'gmail', auth: { user: USUARIO, pass: SENHA } });
+  if (!emailConfigurado()) { console.warn(`E-mail não configurado (BREVO_API_KEY ou GMAIL_USER/GMAIL_APP_PASSWORD): não enviado para ${para}`); return false; }
   const tx = (TEXTOS[idioma] || TEXTOS.pt)[modelo];
   const f = (s) => s.replace(/\{(\w+)\}/g, (_, k) => dados[k] ?? '');
   const fh = (s) => s.replace(/\{(\w+)\}/g, (_, k) => escapar(dados[k] ?? ''));
@@ -39,9 +60,7 @@ export async function enviarEmail({ para, idioma = 'pt', modelo, dados }) {
     <p style="font-size:12px;color:#6b7185;margin:22px 0 0;word-break:break-all">${escapar(dados.link)}</p>
     <p style="font-size:12px;color:#6b7185;margin:12px 0 0">${escapar(tx.ignore)}</p>
   </div></body></html>`;
-  await transporte.sendMail({
-    from: `"Minhas Finanças" <${USUARIO}>`, to: para, subject: f(tx.assunto),
-    text: `${f(tx.ola)}\n\n${f(tx.corpo)}\n\n${dados.link}\n\n${tx.ignore}`, html,
-  });
+  const msg = { para, assunto: f(tx.assunto), html, texto: `${f(tx.ola)}\n\n${f(tx.corpo)}\n\n${dados.link}\n\n${tx.ignore}` };
+  if (BREVO && REMETENTE) await viaBrevo(msg); else await viaGmail(msg);
   return true;
 }
