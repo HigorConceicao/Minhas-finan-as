@@ -51,6 +51,7 @@ export const Lancamento = model(
       fatura: { type: String, default: null }, // pagamento de cartão: 'AAAA-MM' da fatura paga
       ajuste: { type: Boolean, default: false }, // correção de saldo: não conta como receita/despesa
       viagem: { type: Schema.Types.ObjectId, ref: 'Viagem', default: null, index: true },
+      roteiro: { type: Schema.Types.ObjectId, ref: 'ItemRoteiro', default: null, index: true }, // gasto de um item do roteiro
       parcela: { type: { numero: Number, total: Number, grupo: String, valorTotal: Number, _id: false }, default: null },
       recorrente: { type: Schema.Types.ObjectId, ref: 'Recorrente', default: null },
       competencia: { type: String, default: null }, // 'YYYY-MM' quando gerado por recorrência
@@ -99,6 +100,29 @@ export const Viagem = model(
     },
     opts
   )
+);
+
+// roteiro da viagem: passeios, refeições, transporte… (dia null = lista de ideias)
+export const ItemRoteiro = model(
+  'ItemRoteiro',
+  escopado(
+    {
+      viagem: { type: Schema.Types.ObjectId, ref: 'Viagem', required: true, index: true },
+      dia: { type: String, default: null }, // 'AAAA-MM-DD'
+      ordem: { type: Number, default: 0 },
+      tipo: { type: String, enum: ['passeio', 'refeicao', 'transporte', 'hospedagem', 'compras', 'outro'], default: 'passeio' },
+      titulo: { type: String, required: true, trim: true },
+      hora: { type: String, default: '' }, // 'HH:MM'
+      local: { type: String, default: '', trim: true },
+      link: { type: String, default: '', trim: true },
+      valor: { type: Number, default: 0, min: 0 }, // previsto (ingresso, conta do restaurante…), na moeda da viagem
+      refeicao: { momento: { type: String, default: '' }, onde: { type: String, default: '' }, _id: false },
+      transporte: { modo: { type: String, default: '' }, valor: { type: Number, default: 0, min: 0 }, _id: false },
+      nota: { type: String, default: '' },
+      feito: { type: Boolean, default: false },
+    },
+    opts
+  ).index({ viagem: 1, dia: 1, ordem: 1 })
 );
 
 // notificações no celular (Web Push)

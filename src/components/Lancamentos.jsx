@@ -204,7 +204,7 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
     return () => { vivo = false; };
   }, [aberto, f.tipo, mesDoGasto, f.moeda]);
   const parcelado = ehCartao && Number(f.parcelas) > 1;
-  const podePagarComGuardado = f.tipo === 'despesa' && !parcelado;
+  const podePagarComGuardado = f.tipo === 'despesa' && !parcelado && !usaReserva; // dinheiro da viagem não mexe no saldo do mês
   const opcoesMeta = metas.filter((m) => (!m.arquivada && m.guardado > 0) || m._id === f.meta);
   const metaSel = metas.find((m) => m._id === f.meta);
   // sem saldo no mês: sugere a meta com mais dinheiro guardado
@@ -228,6 +228,7 @@ export function FormLancamento({ aberto, item, categorias, aoFechar, aoSalvar, a
       tipo: f.tipo, descricao, valor, moeda: transf ? contaOrig?.moeda || f.moeda : f.moeda, data: f.data, nota: f.nota,
       categoria: transf ? null : f.categoria || null, conta: f.conta === RESERVA ? null : f.conta || null, reservaViagem: !transf && usaReserva, contaDestino: transf ? f.contaDestino : null,
       valorDestino: moedasDiferentes ? lerNumero(f.valorDestino) || null : null, valorConta: outraMoeda ? lerNumero(f.valorConta) || null : null, viagem: transf ? null : f.viagem || null,
+      roteiro: transf || !f.viagem ? null : f.roteiro || null,
       ...(novo && ehCartao && Number(f.parcelas) > 1 ? { parcelas: Number(f.parcelas) } : {}),
       meta: podePagarComGuardado ? f.meta || null : null,
     };

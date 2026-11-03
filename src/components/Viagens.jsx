@@ -7,6 +7,7 @@ import { Barra, BotaoConfirmar, Campo, Carregando, Modal, Segmentado, Vazio, use
 import { FormLancamento, ItemLancamento } from './Lancamentos.jsx';
 import Icone from './Icones.jsx';
 import { TIPOS_ORIGEM } from './Origem.jsx';
+import Roteiro from './Roteiro.jsx';
 
 const ESTADO = { ok: 'bg-pos-suave text-pos', alerta: 'bg-aviso-suave text-aviso', estourado: 'bg-neg-suave text-neg', 'sem-orcamento': 'bg-sutil text-texto-2' };
 const ICONES = ['✈️', '🏖️', '🏔️', '🚆', '🚗', '🗽', '🏝️', '🎒', '⛺', '🇧🇷', '🇩🇪', '🇮🇹'];
@@ -19,9 +20,23 @@ export default function Viagens({ categorias }) {
   const [lista, setLista] = useState(null);
   const [form, setForm] = useState(null);
   const [aberta, setAberta] = useState(null);
+  // roteiro aberto (lembrado na aba, para voltar a ele depois de recarregar a página)
+  const [roteiro, setRoteiroEstado] = useState(() => { try { return sessionStorage.getItem('mf2-roteiro'); } catch { return null; } });
+  const setRoteiro = (id) => { setRoteiroEstado(id); try { id ? sessionStorage.setItem('mf2-roteiro', id) : sessionStorage.removeItem('mf2-roteiro'); } catch {} window.scrollTo({ top: 0 }); };
   const carregar = useCallback(async () => { setLista(await get('/viagens')); recarregarDados(); }, [recarregarDados]);
   useEffect(() => { carregar().catch((e) => avisar(e.message, 'erro')); }, [carregar, avisar]);
   if (!lista) return <Carregando />;
+  const formViagem = (
+    <FormViagem aberto={form !== null} viagem={form} aoFechar={() => setForm(null)}
+      aoSalvar={async () => { setForm(null); await carregar(); avisar(t('viag.salva')); if (roteiro) { const id = roteiro; setRoteiroEstado(null); setTimeout(() => setRoteiroEstado(id)); } }}
+      aoApagar={async (id) => { await del(`/viagens/${id}`); setForm(null); setAberta(null); setRoteiro(null); await carregar(); avisar(t('viag.apagada')); }} />
+  );
+  if (roteiro && lista.some((v) => v._id === roteiro)) return (
+    <>
+      <Roteiro id={roteiro} categorias={categorias} aoVoltar={() => { setRoteiro(null); carregar(); }} aoEditarViagem={(v) => setForm(v)} />
+      {formViagem}
+    </>
+  );
   const ativas = lista.filter((v) => !v.arquivada), arquivadas = lista.filter((v) => v.arquivada);
 
   return (
@@ -34,7 +49,7 @@ export default function Viagens({ categorias }) {
         <Vazio icone="seta" titulo={t('viag.vazioTitulo')} texto={t('viag.vazio')} acao={<button className="btn-primario" onClick={() => setForm({})}>{t('viag.nova')}</button>} />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {ativas.map((v) => <CartaoViagem key={v._id} v={v} aoAbrir={() => setAberta(v._id)} />)}
+          {ativas.map((v) => <CartaoViagem key={v._id} v={v} aoAbrir={() => setAberta(v._id)} aoRoteiro={() => setRoteiro(v._id)} />)}
         </div>
       )}
       {arquivadas.length > 0 && (
@@ -49,10 +64,9 @@ export default function Viagens({ categorias }) {
           </ul>
         </section>
       )}
-      <FormViagem aberto={form !== null} viagem={form} aoFechar={() => setForm(null)}
-        aoSalvar={async () => { setForm(null); await carregar(); avisar(t('viag.salva')); }}
-        aoApagar={async (id) => { await del(`/viagens/${id}`); setForm(null); setAberta(null); await carregar(); avisar(t('viag.apagada')); }} />
-      <DetalheViagem id={aberta} categorias={categorias} aoFechar={() => setAberta(null)} aoEditar={(v) => { setAberta(null); setForm(v); }} aoMudar={carregar} />
+      {formViagem}
+      <DetalheViagem id={aberta} categorias={categorias} aoFechar={() => setAberta(null)} aoEditar={(v) => { setAberta(null); setForm(v); }} aoMudar={carregar}
+        aoRoteiro={(id) => { setAberta(null); setRoteiro(id); }} />
     </div>
   );
 }
@@ -63,10 +77,11 @@ function Periodo({ v }) {
   return <>{dataCurta(v.inicio)}{v.fim ? ` – ${dataCurta(v.fim)}` : ''}{v.dias ? ` · ${t('viag.dias', { n: v.dias })}` : ''}</>;
 }
 
-function CartaoViagem({ v, aoAbrir }) {
+function CartaoViagem({ v, aoAbrir, aoRoteiro }) {
   const t = useT();
   return (
-    <button className="cartao flex flex-col gap-4 p-5 text-left" onClick={aoAbrir}>
+    <div className="cartao flex flex-col overflow-hidden">
+    <button className="flex flex-1 flex-col gap-4 p-5 text-left" onClick={aoAbrir}>
       <span className="flex items-start gap-3">
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-2xl" style={{ background: `${v.cor}1f` }}>{v.icone}</span>
         <span className="min-w-0 flex-1">
@@ -91,10 +106,15 @@ function CartaoViagem({ v, aoAbrir }) {
         {v.temReserva && <span className="mt-2 block text-xs font-semibold text-texto-2">{t('viag.separado')}: <span className="num">{dinheiro(v.saldoReserva, v.moeda)}</span></span>}
       </span>
     </button>
+    <button className="flex items-center justify-between gap-2 border-t border-linha px-5 py-3 text-sm font-semibold text-marca hover:bg-sutil/60" onClick={aoRoteiro}>
+      <span>🗺️ {v.itensRoteiro ? t('rot.itens', { n: v.itensRoteiro }) : t('rot.comecar')}</span>
+      <Icone nome="direita" className="h-4 w-4" />
+    </button>
+    </div>
   );
 }
 
-function DetalheViagem({ id, categorias, aoFechar, aoEditar, aoMudar }) {
+function DetalheViagem({ id, categorias, aoFechar, aoEditar, aoMudar, aoRoteiro }) {
   const t = useT();
   const avisar = useAviso();
   const [v, setV] = useState(null);
@@ -130,7 +150,10 @@ function DetalheViagem({ id, categorias, aoFechar, aoEditar, aoMudar }) {
             )}
           </div>
 
+          <div className="grid gap-2 sm:grid-cols-2">
+          <button className="btn-secundario w-full" onClick={() => aoRoteiro(v._id)}>🗺️ {t('rot.abrir')}</button>
           <button className="btn-primario w-full" onClick={() => setForm({ viagem: v._id, moeda: v.moeda, ...(v.temReserva && v.saldoReserva > 0 ? { conta: '__reserva' } : {}) })}><Icone nome="mais" className="h-4 w-4" forte />{t('viag.adicionarGasto')}</button>
+          </div>
 
           <div className="rounded-2xl border border-linha p-4">
             <div className="mb-1 flex items-center justify-between gap-2">

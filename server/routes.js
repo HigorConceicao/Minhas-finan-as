@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import {
-  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem, Config, LembreteEnviado,
+  Categoria, Lancamento, Recorrente, ContaRendimento, Movimento, Meta, ContribuicaoMeta, RegraCategoria, Conta, Viagem, ReservaViagem, ItemRoteiro, Config, LembreteEnviado,
 } from './models.js';
 import {
   saldoConta, resumoCartao, faturasCartao, gerarParcelas, patrimonio, seriePatrimonio, resumoViagem, relatorioAnual, lembretes, movimentosSeparados, guardadoNoMes, depositosAutomaticosDevidos, separadoViagensNoMes, sincronizarRegraSalario,
@@ -250,15 +250,16 @@ api.delete('/categorias/:id', wrap(async (req, res) => {
 
 // ---------- lançamentos ----------
 const idOuNulo = (v) => (v === undefined ? undefined : v && validarId(v) ? v : null);
-const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota, conta, contaDestino, valorDestino, valorConta, fatura, ajuste, viagem, reservaViagem, meta }) => {
+const camposLancamento = ({ tipo, descricao, valor, moeda, data, categoria, nota, conta, contaDestino, valorDestino, valorConta, fatura, ajuste, viagem, reservaViagem, meta, roteiro }) => {
   const d = Object.fromEntries(Object.entries({
     tipo, descricao, valor: valor === undefined ? undefined : round2(valor), moeda, data, categoria: idOuNulo(categoria), nota,
-    conta: idOuNulo(conta), contaDestino: idOuNulo(contaDestino), viagem: idOuNulo(viagem), meta: idOuNulo(meta),
+    conta: idOuNulo(conta), contaDestino: idOuNulo(contaDestino), viagem: idOuNulo(viagem), meta: idOuNulo(meta), roteiro: idOuNulo(roteiro),
     valorDestino: valorDestino === undefined ? undefined : valorDestino === null || valorDestino === '' ? null : round2(valorDestino),
     valorConta: valorConta === undefined ? undefined : valorConta === null || valorConta === '' ? null : round2(valorConta),
     fatura: fatura === undefined ? undefined : fatura || null, ajuste, reservaViagem: reservaViagem === undefined ? undefined : !!reservaViagem,
   }).filter(([, v]) => v !== undefined));
-  if (d.tipo === 'transferencia') { d.categoria = null; d.viagem = null; d.valorConta = null; d.reservaViagem = false; }
+  if (d.viagem === null) d.roteiro = null;
+  if (d.tipo === 'transferencia') { d.categoria = null; d.viagem = null; d.roteiro = null; d.valorConta = null; d.reservaViagem = false; }
   else if (d.tipo) { d.contaDestino = null; d.valorDestino = null; d.fatura = null; }
   if (d.reservaViagem) d.conta = null; // pago com o dinheiro separado da viagem
   if (d.tipo && d.tipo !== 'despesa') d.meta = null; // só gasto sai da poupança
@@ -386,7 +387,7 @@ api.post('/resetar', wrap(async (req, res) => {
   const manter = req.body?.manterCategorias !== false;
   await Promise.all([
     Lancamento.deleteMany({}), Recorrente.deleteMany({}), ContaRendimento.deleteMany({}), Movimento.deleteMany({}),
-    Meta.deleteMany({}), ContribuicaoMeta.deleteMany({}), Conta.deleteMany({}), Viagem.deleteMany({}), ReservaViagem.deleteMany({}),
+    Meta.deleteMany({}), ContribuicaoMeta.deleteMany({}), Conta.deleteMany({}), Viagem.deleteMany({}), ReservaViagem.deleteMany({}), ItemRoteiro.deleteMany({}),
     LembreteEnviado.deleteMany({}),
     ...(manter ? [] : [Categoria.deleteMany({}), RegraCategoria.deleteMany({})]),
   ]);
@@ -1026,9 +1027,11 @@ const camposViagem = ({ nome, icone, cor, moeda, orcamento, inicio, fim, arquiva
 async function viagensComResumo(filtro = {}) {
   const [viagens, categorias] = await Promise.all([Viagem.find(filtro).sort({ arquivada: 1, inicio: -1, createdAt: -1 }).lean(), Categoria.find().lean()]);
   const ids = viagens.map((v) => v._id);
-  const [lancs, reservas] = ids.length ? await Promise.all([Lancamento.find({ viagem: { $in: ids } }).lean(), ReservaViagem.find({ viagem: { $in: ids } }).sort({ data: -1 }).lean()]) : [[], []];
+  const [lancs, reservas, roteiro] = ids.length ? await Promise.all([Lancamento.find({ viagem: { $in: ids } }).lean(), ReservaViagem.find({ viagem: { $in: ids } }).sort({ data: -1 }).lean(), ItemRoteiro.find({ viagem: { $in: ids } }, 'viagem').lean()]) : [[], [], []];
   const conv = await conversorPorDia(lancs.map((l) => new Date(l.data).toISOString().slice(0, 10)));
-  return { viagens: viagens.map((v) => ({ ...v, ...resumoViagem(v, lancs, conv, categorias, new Date(), reservas) })), lancs, reservas };
+  const itens = new Map();
+  for (const i of roteiro) itens.set(String(i.viagem), (itens.get(String(i.viagem)) || 0) + 1);
+  return { viagens: viagens.map((v) => ({ ...v, ...resumoViagem(v, lancs, conv, categorias, new Date(), reservas), itensRoteiro: itens.get(String(v._id)) || 0 })), lancs, reservas };
 }
 api.get('/viagens', wrap(async (_req, res) => res.json((await viagensComResumo()).viagens)));
 api.get('/viagens/:id', wrap(async (req, res) => {
@@ -1093,11 +1096,97 @@ api.put('/viagens/:id', wrap(async (req, res) => {
 }));
 api.delete('/viagens/:id', wrap(async (req, res) => {
   if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
-  await Lancamento.updateMany({ viagem: req.params.id }, { viagem: null, reservaViagem: false, valorConta: null });
+  await Lancamento.updateMany({ viagem: req.params.id }, { viagem: null, roteiro: null, reservaViagem: false, valorConta: null });
   const ids = (await ReservaViagem.find({ viagem: req.params.id }, '_id').lean()).map((r) => r._id);
   await ContribuicaoMeta.deleteMany({ reservaViagem: { $in: ids } });
   await ReservaViagem.deleteMany({ viagem: req.params.id });
+  await ItemRoteiro.deleteMany({ viagem: req.params.id });
   await Viagem.findByIdAndDelete(req.params.id);
+  res.status(204).end();
+}));
+
+// ---------- roteiro da viagem ----------
+const TIPOS_ROTEIRO = ['passeio', 'refeicao', 'transporte', 'hospedagem', 'compras', 'outro'];
+const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
+const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const texto = (v, max = 300) => String(v ?? '').slice(0, max).trim();
+const naoNeg = (v) => Math.max(0, round2(lerValor(v)));
+function lerValor(v) { const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : 0; }
+function camposRoteiro(b = {}) {
+  const d = {};
+  if (b.titulo !== undefined) d.titulo = texto(b.titulo, 120);
+  if (b.tipo !== undefined) d.tipo = TIPOS_ROTEIRO.includes(b.tipo) ? b.tipo : 'outro';
+  if (b.dia !== undefined) d.dia = DIA_RE.test(String(b.dia || '')) ? String(b.dia) : null;
+  if (b.hora !== undefined) d.hora = HORA_RE.test(String(b.hora || '')) ? String(b.hora) : '';
+  if (b.local !== undefined) d.local = texto(b.local, 200);
+  if (b.link !== undefined) d.link = /^https?:\/\//i.test(String(b.link || '').trim()) ? texto(b.link, 500) : '';
+  if (b.valor !== undefined) d.valor = naoNeg(b.valor);
+  if (b.nota !== undefined) d.nota = texto(b.nota, 1000);
+  if (b.feito !== undefined) d.feito = !!b.feito;
+  if (b.refeicao !== undefined) d.refeicao = { momento: ['cafe', 'almoco', 'jantar', 'lanche'].includes(b.refeicao?.momento) ? b.refeicao.momento : '', onde: ['casa', 'fora'].includes(b.refeicao?.onde) ? b.refeicao.onde : '' };
+  if (b.transporte !== undefined) d.transporte = { modo: ['uber', 'taxi', 'metro', 'onibus', 'ape', 'carro', 'barco', 'aviao', 'outro'].includes(b.transporte?.modo) ? b.transporte.modo : '', valor: naoNeg(b.transporte?.valor) };
+  if (d.tipo && d.tipo !== 'refeicao' && b.refeicao === undefined) d.refeicao = { momento: '', onde: '' };
+  return d;
+}
+async function viagemDoRoteiro(req, res) {
+  if (!validarId(req.params.id)) { erro(res, 400, 'ID inválido'); return null; }
+  const v = await Viagem.findById(req.params.id).lean();
+  if (!v) erro(res, 404, 'Viagem não encontrada');
+  return v;
+}
+/** Itens do roteiro com o que já foi gasto em cada um (na moeda da viagem) */
+api.get('/viagens/:id/roteiro', wrap(async (req, res) => {
+  const v = await viagemDoRoteiro(req, res); if (!v) return;
+  const [itens, lancs] = await Promise.all([
+    ItemRoteiro.find({ viagem: v._id }).sort({ dia: 1, ordem: 1, createdAt: 1 }).lean(),
+    Lancamento.find({ viagem: v._id, roteiro: { $ne: null } }).lean(),
+  ]);
+  const conv = await conversorPorDia(lancs.map((l) => new Date(l.data).toISOString().slice(0, 10)));
+  const gasto = new Map(), qtd = new Map();
+  for (const l of lancs) {
+    if (l.tipo === 'transferencia') continue;
+    const k = String(l.roteiro), val = conv(Number(l.valor), l.moeda, v.moeda, new Date(l.data).toISOString().slice(0, 10)) * (l.tipo === 'receita' ? -1 : 1);
+    gasto.set(k, (gasto.get(k) || 0) + val); qtd.set(k, (qtd.get(k) || 0) + 1);
+  }
+  res.json({ itens: itens.map((i) => ({ ...i, gasto: round2(gasto.get(String(i._id)) || 0), lancamentos: qtd.get(String(i._id)) || 0 })) });
+}));
+api.post('/viagens/:id/roteiro', wrap(async (req, res) => {
+  const v = await viagemDoRoteiro(req, res); if (!v) return;
+  const d = camposRoteiro(req.body);
+  if (!d.titulo) return erro(res, 400, 'Dê um nome', 'dados_invalidos');
+  const ultimo = await ItemRoteiro.findOne({ viagem: v._id, dia: d.dia ?? null }).sort({ ordem: -1 }).lean();
+  res.status(201).json(await ItemRoteiro.create({ ...d, viagem: v._id, ordem: (ultimo?.ordem ?? -1) + 1 }));
+}));
+/** Depois de arrastar: { colunas: { 'AAAA-MM-DD' | 'ideias': [ids em ordem] } } */
+api.put('/viagens/:id/roteiro/ordem', wrap(async (req, res) => {
+  const v = await viagemDoRoteiro(req, res); if (!v) return;
+  const colunas = req.body?.colunas && typeof req.body.colunas === 'object' ? req.body.colunas : {};
+  const ops = [];
+  for (const [col, ids] of Object.entries(colunas)) {
+    const dia = col === 'ideias' ? null : DIA_RE.test(col) ? col : undefined;
+    if (dia === undefined || !Array.isArray(ids)) continue;
+    // bulkWrite não passa pelo filtro automático: o usuário e a viagem vão no filtro
+    ids.filter(validarId).slice(0, 500).forEach((id, ordem) => ops.push({ updateOne: { filter: { _id: id, viagem: v._id, usuario: usuarioAtual() }, update: { $set: { dia, ordem } } } }));
+  }
+  if (ops.length) await ItemRoteiro.bulkWrite(ops);
+  res.json({ ok: true });
+}));
+api.put('/roteiro/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  const d = camposRoteiro(req.body);
+  if (d.titulo === '') return erro(res, 400, 'Dê um nome', 'dados_invalidos');
+  const antes = await ItemRoteiro.findById(req.params.id).lean();
+  if (!antes) return erro(res, 404, 'Item não encontrado');
+  if (d.dia !== undefined && d.dia !== antes.dia) { // mudou de dia: vai para o fim
+    const ultimo = await ItemRoteiro.findOne({ viagem: antes.viagem, dia: d.dia }).sort({ ordem: -1 }).lean();
+    d.ordem = (ultimo?.ordem ?? -1) + 1;
+  }
+  res.json(await ItemRoteiro.findByIdAndUpdate(req.params.id, d, { new: true, runValidators: true }));
+}));
+api.delete('/roteiro/:id', wrap(async (req, res) => {
+  if (!validarId(req.params.id)) return erro(res, 400, 'ID inválido');
+  await Lancamento.updateMany({ roteiro: req.params.id }, { roteiro: null }); // os gastos continuam na viagem
+  await ItemRoteiro.findByIdAndDelete(req.params.id);
   res.status(204).end();
 }));
 
@@ -1135,12 +1224,12 @@ api.get('/lembretes', wrap(async (req, res) => {
 
 // ---------- backup ----------
 api.get('/exportar', wrap(async (_req, res) => {
-  const [categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens, reservasViagem] = await Promise.all([
+  const [categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens, reservasViagem, roteiro] = await Promise.all([
     Categoria.find().lean(), Lancamento.find().lean(), Recorrente.find().lean(), ContaRendimento.find().lean(), Movimento.find().lean(),
-    Meta.find().lean(), ContribuicaoMeta.find().lean(), RegraCategoria.find().lean(), Conta.find().lean(), Viagem.find().lean(), ReservaViagem.find().lean(),
+    Meta.find().lean(), ContribuicaoMeta.find().lean(), RegraCategoria.find().lean(), Conta.find().lean(), Viagem.find().lean(), ReservaViagem.find().lean(), ItemRoteiro.find().lean(),
   ]);
   res.setHeader('Content-Disposition', `attachment; filename="minhas-financas-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ versao: 5, exportadoEm: new Date(), categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens, reservasViagem });
+  res.json({ versao: 5, exportadoEm: new Date(), categorias, lancamentos, recorrentes, contas, movimentos, metas, contribuicoes, regras, carteira, viagens, reservasViagem, roteiro });
 }));
 
 export default api;

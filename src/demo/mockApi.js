@@ -25,7 +25,7 @@ const paraData = (v) => {
 
 class Erro extends Error { constructor(status, msg, codigo = null, dados) { super(msg); this.status = status; this.codigo = codigo; this.dados = dados; } }
 
-const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [], metas: [], contribuicoes: [], regras: [], carteira: [], viagens: [], reservasViagem: [] };
+const db = { categorias: [], lancamentos: [], recorrentes: [], contas: [], movimentos: [], metas: [], contribuicoes: [], regras: [], carteira: [], viagens: [], reservasViagem: [], roteiro: [] };
 let atalho = {};
 const demoUsuario = { _id: 'demo', nome: 'Demonstração', email: 'demo@exemplo.com', admin: true };
 let prefs = { diaInicioMes: 28 }; // na demonstração, o salário cai no dia 28
@@ -89,6 +89,23 @@ function semear() {
   db.reservasViagem.push({ _id: novoId(), viagem: rio._id, conta: giro._id, valor: 800, valorViagem: round2(converter(800, 'EUR', 'BRL')), data: emDias(-6), nota: '' });
   for (const [d, cat, v, m, n, reserva] of [['Voo Frankfurt–Rio', 'Viagens', 780, 'EUR', -30], ['Hotel Copacabana', 'Moradia', 2100, 'BRL', -4], ['Churrascaria', 'Restaurantes', 240, 'BRL', -3, true], ['Pão de Açúcar', 'Lazer', 190, 'BRL', -2, true], ['Uber', 'Transporte', 64, 'BRL', -1, true]]) {
     definirValorConta(add('lancamentos', { tipo: 'despesa', descricao: d, valor: v, moeda: m, data: emDias(n), categoria: c(cat), nota: '', recorrente: null, competencia: null, conta: reserva ? null : cartao._id, viagem: rio._id, reservaViagem: !!reserva }));
+  }
+  // roteiro do Rio: alguns dias planejados e lugares ainda sem dia
+  const diaRio = (n) => emDias(n).slice(0, 10);
+  const itemRot = (n, ordem, d) => add('roteiro', { viagem: rio._id, dia: n == null ? null : diaRio(n), ordem, tipo: 'passeio', hora: '', local: '', link: '', valor: 0, nota: '', feito: n != null && n < 0, refeicao: { momento: '', onde: '' }, transporte: { modo: '', valor: 0 }, ...d });
+  itemRot(-3, 0, { tipo: 'refeicao', titulo: 'Café da manhã', refeicao: { momento: 'cafe', onde: 'casa' } });
+  itemRot(-3, 1, { titulo: 'Praia de Copacabana', hora: '10:00', local: 'Posto 5' });
+  itemRot(-3, 2, { tipo: 'refeicao', titulo: 'Churrascaria', hora: '20:00', local: 'Botafogo', valor: 240, refeicao: { momento: 'jantar', onde: 'fora' }, transporte: { modo: 'uber', valor: 28 } });
+  itemRot(-2, 0, { titulo: 'Pão de Açúcar', hora: '09:00', local: 'Urca', valor: 190, transporte: { modo: 'uber', valor: 32 } });
+  itemRot(0, 0, { titulo: 'Cristo Redentor', hora: '08:30', local: 'Trem do Corcovado', valor: 110, transporte: { modo: 'metro', valor: 14 } });
+  itemRot(0, 1, { tipo: 'refeicao', titulo: 'Almoço em Santa Teresa', hora: '13:00', valor: 120, refeicao: { momento: 'almoco', onde: 'fora' } });
+  itemRot(1, 0, { titulo: 'Trilha Dois Irmãos', hora: '06:00', local: 'Vidigal', valor: 40, transporte: { modo: 'uber', valor: 35 } });
+  itemRot(1, 1, { tipo: 'refeicao', titulo: 'Jantar', refeicao: { momento: 'jantar', onde: 'casa' }, valor: 60 });
+  itemRot(null, 0, { titulo: 'Museu do Amanhã', local: 'Centro', valor: 30 });
+  itemRot(null, 1, { titulo: 'Ilha Grande', nota: 'Bate e volta de barco', valor: 350, transporte: { modo: 'barco', valor: 120 } });
+  itemRot(null, 2, { titulo: 'Feira de São Cristóvão', valor: 80 });
+  for (const l of db.lancamentos) if (l.viagem === rio._id) {
+    const r = db.roteiro.find((i) => i.titulo === l.descricao); if (r) l.roteiro = r._id;
   }
   // faturas já vencidas ficam pagas (pagamento no dia do vencimento)
   gerarRecorrentes();
@@ -399,8 +416,8 @@ function rotaCarteira(M, id, sub, q, body) {
   throw new Erro(404, 'Rota não encontrada');
 }
 
-function rotaViagens(M, id, body, sub) {
-  const comResumo = (v) => ({ ...v, ...resumoViagem(v, db.lancamentos, convDia, db.categorias, new Date(), db.reservasViagem) });
+function rotaViagens(M, id, body, sub, extra) {
+  const comResumo = (v) => ({ ...v, ...resumoViagem(v, db.lancamentos, convDia, db.categorias, new Date(), db.reservasViagem), itensRoteiro: db.roteiro.filter((i) => i.viagem === v._id).length });
   if (id && sub === 'reservas' && M === 'POST') {
     const v = achar('viagens', id);
     const valor = round2(Number(body.valor));
@@ -426,12 +443,64 @@ function rotaViagens(M, id, body, sub) {
     if (meta) db.contribuicoes.push({ _id: novoId(), meta: meta._id, valor: -vMeta, data, conta: conta?._id || null, valorConta: conta ? naMoedaDaConta(conta, -vMeta, meta.moeda, null) : null, nota: `${v.icone || '✈️'} ${v.nome}`, reservaViagem: r._id, pessoa: '' });
     return r;
   }
+  if (id && sub === 'roteiro') return rotaRoteiro(M, achar('viagens', id), body, extra);
   if (!id && M === 'GET') return [...db.viagens].sort((x, y) => (x.arquivada - y.arquivada) || String(y.inicio || '').localeCompare(String(x.inicio || ''))).map(comResumo);
   if (!id && M === 'POST') { const d = { _id: novoId(), icone: '✈️', cor: '#e0672b', moeda: 'EUR', orcamento: 0, inicio: null, fim: null, arquivada: false, ...normalizar('viagens', body), createdAt: agoraISO() }; db.viagens.push(d); return d; }
   const v = achar('viagens', id);
   if (M === 'GET') return { ...comResumo(v), lancamentos: db.lancamentos.filter((l) => l.viagem === id).sort((x, y) => (y.data > x.data ? 1 : -1)), reservas: db.reservasViagem.filter((r) => r.viagem === id).sort((x, y) => (y.data > x.data ? 1 : -1)) };
   if (M === 'PUT') return Object.assign(v, normalizar('viagens', body));
-  if (M === 'DELETE') { for (const l of db.lancamentos) if (l.viagem === id) Object.assign(l, { viagem: null, reservaViagem: false, valorConta: null }); db.reservasViagem = db.reservasViagem.filter((r) => r.viagem !== id); db.viagens = db.viagens.filter((x) => x._id !== id); return null; }
+  if (M === 'DELETE') { for (const l of db.lancamentos) if (l.viagem === id) Object.assign(l, { viagem: null, roteiro: null, reservaViagem: false, valorConta: null }); db.roteiro = db.roteiro.filter((i) => i.viagem !== id); db.reservasViagem = db.reservasViagem.filter((r) => r.viagem !== id); db.viagens = db.viagens.filter((x) => x._id !== id); return null; }
+  throw new Erro(404, 'Rota não encontrada');
+}
+
+// ---------- roteiro da viagem ----------
+const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
+function camposRoteiro(b = {}) {
+  const d = {};
+  const num = (v) => Math.max(0, round2(Number(v) || 0));
+  for (const k of ['titulo', 'local', 'nota', 'link']) if (b[k] !== undefined) d[k] = String(b[k] || '').trim();
+  if (b.tipo !== undefined) d.tipo = b.tipo;
+  if (b.dia !== undefined) d.dia = DIA_RE.test(String(b.dia || '')) ? b.dia : null;
+  if (b.hora !== undefined) d.hora = /^\d{2}:\d{2}$/.test(b.hora || '') ? b.hora : '';
+  if (b.valor !== undefined) d.valor = num(b.valor);
+  if (b.feito !== undefined) d.feito = !!b.feito;
+  if (b.refeicao !== undefined) d.refeicao = { momento: b.refeicao?.momento || '', onde: b.refeicao?.onde || '' };
+  if (b.transporte !== undefined) d.transporte = { modo: b.transporte?.modo || '', valor: num(b.transporte?.valor) };
+  return d;
+}
+function rotaRoteiro(M, v, body, extra) {
+  if (M === 'GET') {
+    const itens = db.roteiro.filter((i) => i.viagem === v._id).sort((a, b) => String(a.dia).localeCompare(String(b.dia)) || a.ordem - b.ordem);
+    return { itens: itens.map((i) => {
+      const ls = db.lancamentos.filter((l) => l.roteiro === i._id && l.tipo !== 'transferencia');
+      return { ...i, gasto: round2(ls.reduce((s, l) => s + convDia(l.valor, l.moeda, v.moeda, l.data.slice(0, 10)) * (l.tipo === 'receita' ? -1 : 1), 0)), lancamentos: ls.length };
+    }) };
+  }
+  if (M === 'POST') {
+    const d = camposRoteiro(body);
+    if (!d.titulo) throw new Erro(400, 'Dê um nome', 'dados_invalidos');
+    const ordem = Math.max(-1, ...db.roteiro.filter((i) => i.viagem === v._id && i.dia === (d.dia ?? null)).map((i) => i.ordem)) + 1;
+    const i = { _id: novoId(), viagem: v._id, dia: null, tipo: 'passeio', hora: '', local: '', link: '', valor: 0, nota: '', feito: false, refeicao: { momento: '', onde: '' }, transporte: { modo: '', valor: 0 }, ...d, ordem, createdAt: agoraISO() };
+    db.roteiro.push(i); return i;
+  }
+  if (M === 'PUT' && extra === 'ordem') {
+    for (const [col, ids] of Object.entries(body?.colunas || {})) {
+      const dia = col === 'ideias' ? null : DIA_RE.test(col) ? col : undefined;
+      if (dia === undefined) continue;
+      ids.forEach((id, ordem) => { const i = db.roteiro.find((x) => x._id === id && x.viagem === v._id); if (i) Object.assign(i, { dia, ordem }); });
+    }
+    return { ok: true };
+  }
+  throw new Erro(404, 'Rota não encontrada');
+}
+function rotaItemRoteiro(M, id, body) {
+  const i = achar('roteiro', id);
+  if (M === 'PUT') {
+    const d = camposRoteiro(body);
+    if (d.dia !== undefined && d.dia !== i.dia) d.ordem = Math.max(-1, ...db.roteiro.filter((x) => x.viagem === i.viagem && x.dia === d.dia).map((x) => x.ordem)) + 1;
+    return Object.assign(i, d);
+  }
+  if (M === 'DELETE') { for (const l of db.lancamentos) if (l.roteiro === id) l.roteiro = null; db.roteiro = db.roteiro.filter((x) => x._id !== id); return null; }
   throw new Erro(404, 'Rota não encontrada');
 }
 
@@ -466,7 +535,7 @@ function rotaAtalho(M, id, body) {
 // ---------- roteador ----------
 const CAMPOS = {
   categorias: ['nome', 'tipo', 'cor', 'icone', 'orcamentoMensal', 'moeda', 'alertaPct', 'dedutivel'],
-  lancamentos: ['tipo', 'descricao', 'valor', 'moeda', 'data', 'categoria', 'nota', 'conta', 'contaDestino', 'valorDestino', 'valorConta', 'fatura', 'ajuste', 'viagem', 'reservaViagem', 'meta'],
+  lancamentos: ['tipo', 'descricao', 'valor', 'moeda', 'data', 'categoria', 'nota', 'conta', 'contaDestino', 'valorDestino', 'valorConta', 'fatura', 'ajuste', 'viagem', 'reservaViagem', 'meta', 'roteiro'],
   recorrentes: ['tipo', 'descricao', 'valor', 'moeda', 'categoria', 'conta', 'frequencia', 'diaDoMes', 'inicio', 'fim', 'ativo'],
   carteira: ['nome', 'tipo', 'instituicao', 'moeda', 'saldoInicial', 'dataInicio', 'cor', 'arquivada', 'limite', 'diaFechamento', 'diaVencimento', 'contaPagamento'],
   viagens: ['nome', 'icone', 'cor', 'moeda', 'orcamento', 'inicio', 'fim', 'arquivada'],
@@ -491,7 +560,7 @@ const normalizar = (col, body) => {
 
 function rotear(method, path, q, body) {
   const p = path.replace(/^\/api/, '').split('/').filter(Boolean);
-  const [a, id, sub] = p;
+  const [a, id, sub, extra] = p;
   const M = method;
 
   if (a === 'status') return { ok: true, temUsuarios: true, eu: demoUsuario, emailConfigurado: false };
@@ -564,7 +633,8 @@ function rotear(method, path, q, body) {
   }
 
   if (a === 'carteira') return rotaCarteira(M, id, sub, q, body);
-  if (a === 'viagens') return rotaViagens(M, id, body, sub);
+  if (a === 'viagens') return rotaViagens(M, id, body, sub, extra);
+  if (a === 'roteiro') return rotaItemRoteiro(M, id, body);
   if (a === 'relatorio') {
     gerarRecorrentes(); sincronizarTodas();
     const ano = /^\d{4}$/.test(q.get('ano') || '') ? Number(q.get('ano')) : new Date().getUTCFullYear();
